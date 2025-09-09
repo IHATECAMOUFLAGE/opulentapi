@@ -1,7 +1,7 @@
-import fetch from "node-fetch";
-import { parse } from "node-html-parser";
+const fetch = require("node-fetch");
+const { parse } = require("node-html-parser");
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).send("Missing ?url parameter");
 
@@ -29,30 +29,17 @@ export default async function handler(req, res) {
         });
       });
 
-      root.querySelectorAll("script").forEach(script => {
-        if (script.innerHTML) {
-          let code = script.innerHTML;
-          code = code.replace(/window\.location/g, `"\${req.url}"`);
-          code = code.replace(/fetch\((.*?)\)/g, (m, p1) => `fetch("/api/proxy?url=" + encodeURIComponent(${p1}))`);
-          code = code.replace(/XMLHttpRequest\.open\((['"])(GET|POST)(['"]),\s*(.*?)\)/g, (m, q1, method, q2, urlArg) => 
-            `open(${q1}${method}${q2}, "/api/proxy?url=" + encodeURIComponent(${urlArg}))`
-          );
-          script.set_content(code);
-        }
-      });
-
-      res.send(root.toString());
+      res.end(root.toString());
     } else if (contentType.includes("application/javascript") || contentType.includes("text/javascript")) {
       let js = await response.text();
       js = js.replace(/window\.location/g, `"\${req.url}"`);
       js = js.replace(/fetch\((.*?)\)/g, (m, p1) => `fetch("/api/proxy?url=" + encodeURIComponent(${p1}))`);
-      res.send(js);
+      res.end(js);
     } else {
       const buffer = Buffer.from(await response.arrayBuffer());
-      res.send(buffer);
+      res.end(buffer);
     }
-
   } catch (err) {
-    res.status(500).send("Proxy error: " + err.message);
+    res.status(500).end("Proxy error: " + err.message);
   }
-}
+};

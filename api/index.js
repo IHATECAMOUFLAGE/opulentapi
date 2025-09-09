@@ -1,6 +1,6 @@
-export default function handler(req, res) {
+module.exports = (req, res) => {
   res.setHeader("Content-Type", "text/html");
-  res.send(`
+  res.end(`
     <!DOCTYPE html>
     <html>
     <head>

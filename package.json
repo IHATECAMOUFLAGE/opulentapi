@@ -1,9 +1,11 @@
 {
-  "name": "opulentapi",
+  "name": "opulentapi_advanced",
   "version": "1.0.0",
   "main": "api/index.js",
   "dependencies": {
     "node-fetch": "^2.6.7",
-    "node-html-parser": "^6.1.6"
+    "parse5": "^8.1.0",
+    "postcss": "^9.0.0",
+    "postcss-value-parser": "^4.2.0"
   }
 }

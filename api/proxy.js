@@ -17,20 +17,8 @@ export default async function handler(req, res) {
       let html = await response.text();
       const root = parse(html);
 
-      // Rewrite <a href>
-      root.querySelectorAll("a").forEach(a => {
-        const href = a.getAttribute("href");
-        if (href) {
-          try {
-            const newUrl = new URL(href, url).href;
-            a.setAttribute("href", "/api/proxy?url=" + encodeURIComponent(newUrl));
-          } catch {}
-        }
-      });
-
-      // Rewrite <img>, <script>, <link>
-      root.querySelectorAll("[src],[href]").forEach(el => {
-        ["src", "href"].forEach(attr => {
+      root.querySelectorAll("[href],[src]").forEach(el => {
+        ["href", "src"].forEach(attr => {
           const val = el.getAttribute(attr);
           if (val) {
             try {
@@ -41,12 +29,29 @@ export default async function handler(req, res) {
         });
       });
 
+      root.querySelectorAll("script").forEach(script => {
+        if (script.innerHTML) {
+          let code = script.innerHTML;
+          code = code.replace(/window\.location/g, `"\${req.url}"`);
+          code = code.replace(/fetch\((.*?)\)/g, (m, p1) => `fetch("/api/proxy?url=" + encodeURIComponent(${p1}))`);
+          code = code.replace(/XMLHttpRequest\.open\((['"])(GET|POST)(['"]),\s*(.*?)\)/g, (m, q1, method, q2, urlArg) => 
+            `open(${q1}${method}${q2}, "/api/proxy?url=" + encodeURIComponent(${urlArg}))`
+          );
+          script.set_content(code);
+        }
+      });
+
       res.send(root.toString());
+    } else if (contentType.includes("application/javascript") || contentType.includes("text/javascript")) {
+      let js = await response.text();
+      js = js.replace(/window\.location/g, `"\${req.url}"`);
+      js = js.replace(/fetch\((.*?)\)/g, (m, p1) => `fetch("/api/proxy?url=" + encodeURIComponent(${p1}))`);
+      res.send(js);
     } else {
-      // Non-HTML: stream file
       const buffer = Buffer.from(await response.arrayBuffer());
       res.send(buffer);
     }
+
   } catch (err) {
     res.status(500).send("Proxy error: " + err.message);
   }

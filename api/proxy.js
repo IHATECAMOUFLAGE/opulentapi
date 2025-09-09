@@ -29,7 +29,6 @@ module.exports = async (req, res) => {
     if (contentType.includes("text/html")) {
       let html = await response.text();
 
-      // Capture Set-Cookie and inject into localStorage
       const setCookie = response.headers.raw()['set-cookie'];
       if (setCookie) {
         const inject = `<script>

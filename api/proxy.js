@@ -1,13 +1,26 @@
 const fetch = require("node-fetch");
-const { parse } = require("node-html-parser");
+const { rewriteHTML } = require("../lib/rewriter/html");
+const { rewriteCSS } = require("../lib/rewriter/css");
+const { rewriteJS } = require("../lib/rewriter/js");
 
 module.exports = async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).send("Missing ?url parameter");
 
   try {
+    let cookies = [];
+    if (req.headers.cookie) {
+      try {
+        const match = req.headers.cookie.match(/opulent_cookies=([^;]+)/);
+        if (match) cookies = JSON.parse(decodeURIComponent(match[1]));
+      } catch {}
+    }
+
     const response = await fetch(url, {
-      headers: { "User-Agent": req.headers["user-agent"] }
+      headers: {
+        "User-Agent": req.headers["user-agent"],
+        "Cookie": cookies.join("; ")
+      }
     });
 
     const contentType = response.headers.get("content-type") || "";
@@ -15,26 +28,24 @@ module.exports = async (req, res) => {
 
     if (contentType.includes("text/html")) {
       let html = await response.text();
-      const root = parse(html);
 
-      root.querySelectorAll("[href],[src]").forEach(el => {
-        ["href", "src"].forEach(attr => {
-          const val = el.getAttribute(attr);
-          if (val) {
-            try {
-              const newUrl = new URL(val, url).href;
-              el.setAttribute(attr, "/api/proxy?url=" + encodeURIComponent(newUrl));
-            } catch {}
-          }
-        });
-      });
+      // Capture Set-Cookie and inject into localStorage
+      const setCookie = response.headers.raw()['set-cookie'];
+      if (setCookie) {
+        const inject = `<script>
+          localStorage.setItem("opulent_cookies", ${JSON.stringify(setCookie)});
+        </script>`;
+        html = inject + html;
+      }
 
-      res.end(root.toString());
-    } else if (contentType.includes("application/javascript") || contentType.includes("text/javascript")) {
-      let js = await response.text();
-      js = js.replace(/window\.location/g, `"\${req.url}"`);
-      js = js.replace(/fetch\((.*?)\)/g, (m, p1) => `fetch("/api/proxy?url=" + encodeURIComponent(${p1}))`);
-      res.end(js);
+      html = rewriteHTML(html, "https://" + req.headers.host, url);
+      res.end(html);
+    } else if (contentType.includes("text/css")) {
+      const css = await response.text();
+      res.end(await rewriteCSS(css, "https://" + req.headers.host, url));
+    } else if (contentType.includes("javascript") || contentType.includes("text/javascript")) {
+      const js = await response.text();
+      res.end(rewriteJS(js, "https://" + req.headers.host, url));
     } else {
       const buffer = Buffer.from(await response.arrayBuffer());
       res.end(buffer);

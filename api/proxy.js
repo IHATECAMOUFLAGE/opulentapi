@@ -1,7 +1,10 @@
 const fetch = require("node-fetch");
+const fs = require("fs");
 const { rewriteHTML } = require("../lib/rewriter/html");
 const { rewriteCSS } = require("../lib/rewriter/css");
 const { rewriteJS } = require("../lib/rewriter/js");
+
+const injectJSCode = fs.readFileSync('inject.js', 'utf-8');
 
 module.exports = async (req, res) => {
   const { url } = req.query;
@@ -31,12 +34,11 @@ module.exports = async (req, res) => {
 
       const setCookie = response.headers.raw()['set-cookie'];
       if (setCookie) {
-        const inject = `<script>
-          localStorage.setItem("opulent_cookies", ${JSON.stringify(setCookie)});
-        </script>`;
+        const inject = `<script>localStorage.setItem("opulent_cookies", ${JSON.stringify(setCookie)});</script>`;
         html = inject + html;
       }
 
+      html = `<script>${injectJSCode}</script>` + html;
       html = rewriteHTML(html, "https://" + req.headers.host, url);
       res.end(html);
     } else if (contentType.includes("text/css")) {

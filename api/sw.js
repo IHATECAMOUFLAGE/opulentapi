@@ -29,7 +29,7 @@ self.addEventListener('fetch', event => {
 });
 `;
 
-export default function handler(req, res) {
+module.exports = function handler(req, res) {
   try {
     res.setHeader('Content-Type', 'application/javascript');
     res.setHeader('Cache-Control', 'no-store');
@@ -38,4 +38,4 @@ export default function handler(req, res) {
     console.error('SW function error:', err);
     res.status(500).send('// SW server error');
   }
-}
+};

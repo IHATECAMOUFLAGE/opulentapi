@@ -12,24 +12,6 @@ try {
   injectJS = fs.readFileSync(path.join(__dirname, "../lib/rewriter/inject.js"), "utf8");
 } catch(e){}
 
-const swScript = `
-self.addEventListener('install', e => self.skipWaiting());
-self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-  const proxyHost = self.location.origin + '/api/proxy?url=';
-  let target = e.request.url;
-  if(!url.pathname.startsWith('/api/')) target = proxyHost + encodeURIComponent(e.request.url);
-  e.respondWith(fetch(target, {
-    headers: e.request.headers,
-    method: e.request.method,
-    body: e.request.body,
-    mode: 'cors',
-    credentials: 'same-origin'
-  }).catch(() => fetch(e.request)));
-});
-`;
-
 function isDataOrJs(url){
   return !url || url.startsWith("data:") || url.startsWith("javascript:");
 }
@@ -113,14 +95,12 @@ module.exports = async (req, res) => {
 
   if(req.path === "/api/sw.js"){
     res.setHeader("Content-Type","application/javascript");
-    return res.send(swScript);
+    return res.send(fs.readFileSync(path.join(__dirname,"sw.js"),"utf8"));
   }
 
   let response;
   try{
-    response = await fetch(url, {
-      headers: { "User-Agent": req.headers["user-agent"] || "OpulentAPI" }
-    });
+    response = await fetch(url, { headers: { "User-Agent": req.headers["user-agent"] || "OpulentAPI" } });
   }catch(e){
     return res.status(500).send("Fetch error: "+e.message);
   }

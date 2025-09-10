@@ -10,28 +10,46 @@ const path = require("path");
 let injectJS = "";
 try {
   injectJS = fs.readFileSync(path.join(__dirname, "../lib/rewriter/inject.js"), "utf8");
-} catch (e) {}
+} catch(e){}
 
-function isDataOrJs(url) {
+const swScript = `
+self.addEventListener('install', e => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+  const proxyHost = self.location.origin + '/api/proxy?url=';
+  let target = e.request.url;
+  if(!url.pathname.startsWith('/api/')) target = proxyHost + encodeURIComponent(e.request.url);
+  e.respondWith(fetch(target, {
+    headers: e.request.headers,
+    method: e.request.method,
+    body: e.request.body,
+    mode: 'cors',
+    credentials: 'same-origin'
+  }).catch(() => fetch(e.request)));
+});
+`;
+
+function isDataOrJs(url){
   return !url || url.startsWith("data:") || url.startsWith("javascript:");
 }
 
-function resolveFullUrl(raw, base) {
-  try {
+function resolveFullUrl(raw, base){
+  try{
     if(raw.startsWith("//")) return "https:" + raw;
     if(raw.startsWith("http")) return raw;
     return new URL(raw, base).href;
-  } catch(e){ return raw; }
+  }catch(e){ return raw; }
 }
 
-function proxyUrlFor(raw, proxyPrefix, base) {
+function proxyUrlFor(raw, proxyPrefix, base){
   if(isDataOrJs(raw)) return raw;
   const resolved = resolveFullUrl(raw, base);
   if(resolved.startsWith(proxyPrefix)) return resolved;
   return proxyPrefix + encodeURIComponent(resolved);
 }
 
-function rewriteCSS(css, proxyPrefix, base) {
+function rewriteCSS(css, proxyPrefix, base){
   return postcss([
     root => {
       root.walkDecls(decl => {
@@ -48,7 +66,7 @@ function rewriteCSS(css, proxyPrefix, base) {
   ]).process(css, { from: undefined }).css;
 }
 
-function rewriteAttributes(node, proxyPrefix, base) {
+function rewriteAttributes(node, proxyPrefix, base){
   const attrs = node.attrs || [];
   attrs.forEach(attr => {
     const name = attr.name.toLowerCase();
@@ -61,19 +79,19 @@ function rewriteAttributes(node, proxyPrefix, base) {
   });
 }
 
-function walk(node, proxyPrefix, base) {
+function walk(node, proxyPrefix, base){
   if(node.nodeName === "#text") return;
   if(node.attrs) rewriteAttributes(node, proxyPrefix, base);
   if(node.childNodes) node.childNodes.forEach(c => walk(c, proxyPrefix, base));
 }
 
-function rewriteHTML(html, proxyPrefix, base) {
+function rewriteHTML(html, proxyPrefix, base){
   const doc = parse5.parse(html);
   walk(doc, proxyPrefix, base);
   return parse5.serialize(doc);
 }
 
-function rewriteJS(jsCode, proxyPrefix, base) {
+function rewriteJS(jsCode, proxyPrefix, base){
   try{
     const ast = parser.parse(String(jsCode), { sourceType:"unambiguous", plugins:["jsx","dynamicImport","classProperties","optionalChaining"] });
     traverse(ast, {
@@ -84,7 +102,7 @@ function rewriteJS(jsCode, proxyPrefix, base) {
       }
     });
     return generator(ast).code;
-  } catch(e){ return jsCode; }
+  }catch(e){ return jsCode; }
 }
 
 module.exports = async (req, res) => {
@@ -93,13 +111,29 @@ module.exports = async (req, res) => {
 
   const proxyPrefix = `https://${req.headers.host}/api/proxy?url=`;
 
+  if(req.path === "/api/sw.js"){
+    res.setHeader("Content-Type","application/javascript");
+    return res.send(swScript);
+  }
+
   let response;
   try{
     response = await fetch(url, {
       headers: { "User-Agent": req.headers["user-agent"] || "OpulentAPI" }
     });
-  } catch(e){
+  }catch(e){
     return res.status(500).send("Fetch error: "+e.message);
+  }
+
+  response.headers.forEach((value,name)=>{
+    if(name.toLowerCase() === "content-encoding") return;
+    res.setHeader(name,value);
+  });
+
+  if(!response.headers.has("access-control-allow-origin")){
+    res.setHeader("Access-Control-Allow-Origin","*");
+    res.setHeader("Access-Control-Allow-Methods","GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers","*");
   }
 
   const contentType = response.headers.get("content-type") || "application/octet-stream";
@@ -109,25 +143,27 @@ module.exports = async (req, res) => {
     if(contentType.includes("text/html")){
       let html = await response.text();
       if(injectJS) html = html.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
-      html = rewriteHTML(html, proxyPrefix, url);
+      html = rewriteHTML(html, proxyPrefix, response.url);
+      html += `<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/api/sw.js').catch(()=>{});}</script>`;
       return res.end(html);
     }
 
     if(contentType.includes("text/css")){
       const css = await response.text();
-      return res.end(rewriteCSS(css, proxyPrefix, url));
+      res.setHeader("Content-Type","text/css");
+      return res.end(rewriteCSS(css, proxyPrefix, response.url));
     }
 
     if(contentType.includes("javascript") || contentType.includes("ecmascript")){
       const js = await response.text();
-      return res.end(rewriteJS(js, proxyPrefix, url));
+      return res.end(rewriteJS(js, proxyPrefix, response.url));
     }
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     res.setHeader("Content-Length", buffer.length);
     return res.send(buffer);
-  } catch(e){
+  }catch(e){
     return res.status(500).send("Rewrite error: "+e.message);
   }
 };

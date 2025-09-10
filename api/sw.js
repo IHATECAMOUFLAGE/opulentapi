@@ -1,41 +1,16 @@
-const swScript = `
-self.addEventListener('install', event => {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.claim());
-});
-
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
+self.addEventListener('install', e => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
   const proxyHost = self.location.origin + '/api/proxy?url=';
-
-  let target = event.request.url;
-
-  if (!url.pathname.startsWith('/api/')) {
-    target = proxyHost + encodeURIComponent(event.request.url);
-  }
-
-  event.respondWith(
+  let target = e.request.url;
+  if(!url.pathname.startsWith('/api/')) target = proxyHost + encodeURIComponent(e.request.url);
+  e.respondWith(
     fetch(target, {
-      headers: event.request.headers,
-      method: event.request.method,
-      body: event.request.body,
-      mode: 'cors',
+      headers: e.request.headers,
+      method: e.request.method,
+      body: e.request.body,
       credentials: 'same-origin'
-    }).catch(() => fetch(event.request))
+    }).catch(() => fetch(e.request))
   );
 });
-`;
-
-module.exports = function handler(req, res) {
-  try {
-    res.setHeader('Content-Type', 'application/javascript');
-    res.setHeader('Cache-Control', 'no-store');
-    res.status(200).send(swScript);
-  } catch (err) {
-    console.error('SW function error:', err);
-    res.status(500).send('// SW server error');
-  }
-};

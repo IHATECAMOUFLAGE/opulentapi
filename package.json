@@ -7,7 +7,6 @@
     "@babel/parser": "^7.26.0",
     "@babel/traverse": "^7.26.0",
     "axios": "^1.7.4",
-    "https": "^1.0.0",
     "parse5": "^7.1.2",
     "postcss": "^8.4.38"
   }

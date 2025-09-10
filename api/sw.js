@@ -29,4 +29,13 @@ self.addEventListener('fetch', event => {
 });
 `;
 
-module.exports = swScript;
+export default function handler(req, res) {
+  try {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(200).send(swScript);
+  } catch (err) {
+    console.error('SW function error:', err);
+    res.status(500).send('// SW server error');
+  }
+}

@@ -1,13 +1,12 @@
 {
-  "name": "proxy",
+  "name": "opulent-proxy",
   "version": "1.0.0",
   "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "start": "vercel dev"
+  },
   "dependencies": {
-    "@babel/generator": "^7.26.0",
-    "@babel/parser": "^7.26.0",
-    "@babel/traverse": "^7.26.0",
-    "axios": "^1.7.4",
-    "parse5": "^7.1.2",
-    "postcss": "^8.4.38"
+    "axios": "^1.6.0"
   }
 }

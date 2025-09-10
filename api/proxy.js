@@ -2,11 +2,11 @@ import axios from "axios";
 import https from "https";
 import fs from "fs";
 import path from "path";
-import parse5 from "parse5";
-import postcss from "postcss";
+import * as parse5 from "parse5";
+import * as postcss from "postcss";
 import * as babelParser from "@babel/parser";
-import traverse from "@babel/traverse";
-import generator from "@babel/generator";
+import * as babelTraverse from "@babel/traverse";
+import * as babelGenerator from "@babel/generator";
 
 function isDataOrJs(url) {
   return !url || url.startsWith("data:") || url.startsWith("javascript:");
@@ -28,7 +28,7 @@ function proxyUrlFor(raw, proxyHost, base) {
 }
 
 function rewriteCSS(css, proxyHost, base) {
-  return postcss([
+  return postcss.default([
     root => {
       root.walkDecls(decl => {
         decl.value = decl.value.replace(/url\(([^)]+)\)/gi, (_, u) => {
@@ -75,14 +75,14 @@ function rewriteJS(jsCode, proxyPrefix, base) {
       sourceType: "unambiguous",
       plugins: ["jsx", "dynamicImport", "classProperties", "optionalChaining"]
     });
-    traverse.default(ast, {
+    babelTraverse.default(ast, {
       StringLiteral(path) {
         if (path.node.value.startsWith("http") || path.node.value.startsWith("//") || path.node.value.startsWith("./") || path.node.value.startsWith("../")) {
           path.node.value = proxyUrlFor(path.node.value, proxyPrefix, base);
         }
       }
     });
-    return generator.default(ast).code;
+    return babelGenerator.default(ast).code;
   } catch {
     return jsCode;
   }

@@ -1,13 +1,12 @@
 import axios from "axios";
 import https from "https";
-import fs from "fs";
-import path from "path";
 import * as parse5 from "parse5";
 import * as postcss from "postcss";
 import * as babelParser from "@babel/parser";
 import * as babelTraverse from "@babel/traverse";
 import * as babelGenerator from "@babel/generator";
 
+// --- utils ---
 function isDataOrJs(url) {
   return !url || url.startsWith("data:") || url.startsWith("javascript:");
 }
@@ -27,8 +26,9 @@ function proxyUrlFor(raw, proxyHost, base) {
   return `${proxyHost}?url=${encodeURIComponent(resolveFullUrl(raw, base))}`;
 }
 
-function rewriteCSS(css, proxyHost, base) {
-  return postcss.default([
+// --- CSS rewriting (async) ---
+async function rewriteCSS(css, proxyHost, base) {
+  const result = await postcss.default([
     root => {
       root.walkDecls(decl => {
         decl.value = decl.value.replace(/url\(([^)]+)\)/gi, (_, u) => {
@@ -41,18 +41,28 @@ function rewriteCSS(css, proxyHost, base) {
         if (m) at.params = `"${proxyUrlFor(m[2], proxyHost, base)}"`;
       });
     }
-  ]).process(css, { from: undefined }).css;
+  ]).process(css, { from: undefined });
+  return result.css;
 }
 
+// --- HTML rewriting ---
 function rewriteAttributes(node, proxyHost, base) {
   const attrs = node.attrs || [];
   attrs.forEach(attr => {
     const name = attr.name.toLowerCase();
-    if (["src","href","poster","action","formaction","data-src","data-href","longdesc","cite","manifest","icon"].includes(name)) {
+    if (
+      [
+        "src","href","poster","action","formaction","data-src","data-href",
+        "longdesc","cite","manifest","icon"
+      ].includes(name)
+    ) {
       attr.value = proxyUrlFor(attr.value, proxyHost, base);
     }
     if (name === "style") {
-      attr.value = rewriteCSS(attr.value, proxyHost, base);
+      attr.value = attr.value ? attr.value.replace(/url\(([^)]+)\)/gi, (_, u) => {
+        const clean = u.replace(/['"]/g, "").trim();
+        return `url(${proxyUrlFor(clean, proxyHost, base)})`;
+      }) : attr.value;
     }
   });
 }
@@ -69,6 +79,7 @@ function rewriteHTML(html, proxyHost, base) {
   return parse5.serialize(doc);
 }
 
+// --- JS rewriting ---
 function rewriteJS(jsCode, proxyPrefix, base) {
   try {
     const ast = babelParser.parse(String(jsCode), {
@@ -77,9 +88,17 @@ function rewriteJS(jsCode, proxyPrefix, base) {
     });
     babelTraverse.default(ast, {
       StringLiteral(path) {
-        if (path.node.value.startsWith("http") || path.node.value.startsWith("//") || path.node.value.startsWith("./") || path.node.value.startsWith("../")) {
-          path.node.value = proxyUrlFor(path.node.value, proxyPrefix, base);
+        const val = path.node.value;
+        if (val.startsWith("http") || val.startsWith("//") || val.startsWith("./") || val.startsWith("../")) {
+          path.node.value = proxyUrlFor(val, proxyPrefix, base);
         }
+      },
+      TemplateLiteral(path) {
+        path.node.quasis.forEach(q => {
+          if (q.value.cooked && (q.value.cooked.includes("http") || q.value.cooked.startsWith("//"))) {
+            q.value.cooked = proxyUrlFor(q.value.cooked, proxyPrefix, base);
+          }
+        });
       }
     });
     return babelGenerator.default(ast).code;
@@ -88,6 +107,7 @@ function rewriteJS(jsCode, proxyPrefix, base) {
   }
 }
 
+// --- MAIN HANDLER ---
 export default async function handler(req, res) {
   if (req.method === "OPTIONS") {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -100,16 +120,15 @@ export default async function handler(req, res) {
   if (!url) return res.status(400).send("Missing ?url parameter.");
   url = decodeURIComponent(url);
 
+  // Build proxyHost dynamically for Vercel
+  const proxyHost = `${req.headers["x-forwarded-proto"]}://${req.headers.host}/api/proxy`;
+
   try {
     const agent = new https.Agent({ rejectUnauthorized: false });
-    const isImage = /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(url);
-    const isBinary = /\.(woff2?|ttf|eot|otf|ico)$/i.test(url);
-    const isJson = /\.json$/i.test(url);
-    const isJs = /\.js$/i.test(url);
 
     const response = await axios.get(url, {
       httpsAgent: agent,
-      responseType: isImage || isBinary ? "arraybuffer" : "text",
+      responseType: "arraybuffer",
       timeout: 30000,
       headers: {
         "User-Agent": req.headers["user-agent"] || "",
@@ -127,17 +146,23 @@ export default async function handler(req, res) {
     delete headers["x-frame-options"];
     for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
 
-    if (isImage || isBinary) return res.status(response.status).send(Buffer.from(response.data));
-    if (isJson) return res.status(response.status).json(response.data);
+    const isText = /^text\/|javascript|json|xml/i.test(contentType);
+    const isHtml = /text\/html/i.test(contentType);
+    const isCss = /text\/css/i.test(contentType);
+    const isJs = /javascript|ecmascript/i.test(contentType);
 
-    let data = response.data;
+    if (!isText) {
+      return res.status(response.status).send(Buffer.from(response.data));
+    }
 
-    if (contentType.includes("text/html")) {
-      data = rewriteHTML(data, `/api/proxy`, url);
-    } else if (contentType.includes("text/css")) {
-      data = rewriteCSS(data, `/api/proxy`, url);
-    } else if (isJs || contentType.includes("javascript") || contentType.includes("ecmascript")) {
-      data = rewriteJS(data, `/api/proxy?url=`, url);
+    let data = Buffer.from(response.data).toString("utf8");
+
+    if (isHtml) {
+      data = rewriteHTML(data, proxyHost, url);
+    } else if (isCss) {
+      data = await rewriteCSS(data, proxyHost, url);
+    } else if (isJs) {
+      data = rewriteJS(data, `${proxyHost}?url=`, url);
     }
 
     return res.status(response.status).send(data);

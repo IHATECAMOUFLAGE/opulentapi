@@ -1,9 +1,9 @@
 const fetch = require("node-fetch");
-const { rewriteHTML } = require("../lib/rewriter/html");
-const { rewriteCSS } = require("../lib/rewriter/css");
 const parser = require("@babel/parser");
 const traverse = require("@babel/traverse").default;
 const generator = require("@babel/generator").default;
+const { rewriteHTML } = require("../lib/rewriter/html");
+const { rewriteCSS } = require("../lib/rewriter/css");
 
 const injectJSCode = `(function(){
 var erudaScript=document.createElement('script');
@@ -97,7 +97,6 @@ module.exports = async (req,res)=>{
 
     if(contentType.includes("text/html")){
       let html = await response.text();
-
       const setCookie = response.headers.raw()['set-cookie'];
       if(setCookie){
         const inject = `<script>localStorage.setItem("opulent_cookies", ${JSON.stringify(setCookie)});</script>`;

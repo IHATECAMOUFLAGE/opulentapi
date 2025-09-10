@@ -1,20 +1,14 @@
 {
-  "name": "opulentapi",
+  "name": "proxy",
   "version": "1.0.0",
-  "type": "commonjs",
-  "scripts": {
-    "start": "vercel dev",
-    "deploy": "vercel --prod"
-  },
+  "type": "module",
   "dependencies": {
-    "node-fetch": "^2.6.12",
+    "@babel/generator": "^7.26.0",
+    "@babel/parser": "^7.26.0",
+    "@babel/traverse": "^7.26.0",
+    "axios": "^1.7.4",
+    "https": "^1.0.0",
     "parse5": "^7.1.2",
-    "postcss": "^8.4.31",
-    "@babel/parser": "^7.22.16",
-    "@babel/traverse": "^7.22.17",
-    "@babel/generator": "^7.22.19"
-  },
-  "engines": {
-    "node": "22.x"
+    "postcss": "^8.4.38"
   }
 }

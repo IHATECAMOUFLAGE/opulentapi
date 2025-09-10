@@ -1,7 +1,7 @@
 {
   "name": "opulentapi",
   "version": "1.0.0",
-  "description": "Advanced serverless proxy with AST JS rewriting and SPA support",
+  "description": "Advanced serverless proxy with full rewriting",
   "main": "api/proxy.js",
   "type": "commonjs",
   "scripts": {

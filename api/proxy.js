@@ -6,11 +6,10 @@ const { rewriteHTML } = require("../lib/rewriter/html");
 const { rewriteCSS } = require("../lib/rewriter/css");
 const { rewriteJS } = require("../lib/rewriter/js");
 
-// Load inject.js safely
 let injectJS = "";
 try {
   injectJS = fs.readFileSync(path.join(__dirname, "../lib/rewriter/inject.js"), "utf8");
-} catch(e){}
+} catch (e) {}
 
 module.exports = async (req, res) => {
   const url = req.query.url;
@@ -25,13 +24,15 @@ module.exports = async (req, res) => {
     return res.status(500).send("Fetch error: " + e.message);
   }
 
-  const contentType = response.headers.get("content-type") || "";
+  const contentType = response.headers.get("content-type") || "application/octet-stream";
   res.setHeader("Content-Type", contentType);
 
   try {
     if (contentType.includes("text/html")) {
       let html = await response.text();
-      if (injectJS) html = `<script>${injectJS}</script>` + html;
+      if (injectJS) {
+        html = html.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
+      }
       html = rewriteHTML(html, "https://" + req.headers.host, url);
       return res.end(html);
     }
@@ -46,9 +47,10 @@ module.exports = async (req, res) => {
       return res.end(rewriteJS(js, "https://" + req.headers.host + "/api/proxy?url=", url));
     }
 
-    // Binary or unknown content type
-    const buffer = Buffer.from(await response.arrayBuffer());
-    return res.end(buffer);
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    res.setHeader("Content-Length", buffer.length);
+    return res.send(buffer);
   } catch (e) {
     return res.status(500).send("Rewrite error: " + e.message);
   }

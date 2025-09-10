@@ -1,8 +1,6 @@
 {
   "name": "opulentapi",
   "version": "1.0.0",
-  "description": "Advanced serverless proxy with full rewriting",
-  "main": "api/proxy.js",
   "type": "commonjs",
   "scripts": {
     "start": "vercel dev",
@@ -10,12 +8,13 @@
   },
   "dependencies": {
     "node-fetch": "^2.6.12",
-    "@babel/parser": "^7.22.19",
-    "@babel/traverse": "^7.22.19",
+    "parse5": "^7.1.2",
+    "postcss": "^8.4.31",
+    "@babel/parser": "^7.22.16",
+    "@babel/traverse": "^7.22.17",
     "@babel/generator": "^7.22.19"
   },
   "engines": {
     "node": "22.x"
-  },
-  "license": "MIT"
+  }
 }

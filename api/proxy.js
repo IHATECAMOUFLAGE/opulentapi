@@ -36,6 +36,8 @@ export default async function handler(req, res) {
         'User-Agent': req.headers['user-agent'] || '',
         'Accept': '*/*',
       },
+      maxRedirects: 0,
+      validateStatus: (status) => true,
     });
   } catch (e) {
     return res.status(500).send('Fetch error: ' + e.message);
@@ -49,8 +51,18 @@ export default async function handler(req, res) {
   delete headers['content-security-policy'];
   delete headers['content-security-policy-report-only'];
   delete headers['x-frame-options'];
+
+  const proxyBase = '/api/proxy?url=';
+
   for (const [key, value] of Object.entries(headers)) {
     res.setHeader(key, value);
+  }
+
+  if (headers['location']) {
+    try {
+      const absolute = new URL(headers['location'], url).toString();
+      res.setHeader('location', proxyBase + encodeURIComponent(absolute));
+    } catch (e) {}
   }
 
   if (isBinary) {
@@ -62,7 +74,6 @@ export default async function handler(req, res) {
   }
 
   let data = response.data;
-  const proxyBase = '/api/proxy?url=';
 
   if (!isJs && contentType.includes('text/html')) {
     const baseUrl = new URL(url);

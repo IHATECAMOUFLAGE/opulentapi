@@ -16,10 +16,11 @@ export default async function handler(req, res) {
     return res.status(204).end();
   }
 
-  let { url, rawhtml } = req.query;
+  let { url } = req.query;
   if (!url) return res.status(400).send('Missing `url` query parameter.');
-  url = decodeURIComponent(url);
-  rawhtml = rawhtml === 'true';
+
+  const isRaw = url.includes('###RAWHTML###');
+  url = decodeURIComponent(url.replace('###RAWHTML###', ''));
 
   const agent = new https.Agent({ rejectUnauthorized: false });
   const proxyBase = '/api/proxy?url=';
@@ -40,10 +41,6 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).send('Fetch error: ' + e.message);
   }
-
-  const contentType = response.headers['content-type'] || 'text/html';
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Content-Type', 'text/html');
 
   const headers = { ...response.headers };
   delete headers['content-security-policy'];
@@ -86,7 +83,7 @@ export default async function handler(req, res) {
 
   if (injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
 
-  if (rawhtml) {
+  if (isRaw) {
     return res.status(response.status).send(data);
   }
 

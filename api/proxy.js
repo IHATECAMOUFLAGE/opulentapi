@@ -6,18 +6,18 @@ import path from 'path';
 let injectJS = '';
 try {
   injectJS = fs.readFileSync(path.join(process.cwd(), 'lib/rewriter/inject.js'), 'utf8');
-} catch(e) {}
+} catch (e) {}
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, User-Agent, Referer");
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, User-Agent, Referer');
     return res.status(204).end();
   }
 
   let { url } = req.query;
-  if (!url) return res.status(400).send("Missing `url` query parameter.");
+  if (!url) return res.status(400).send('Missing `url` query parameter.');
   url = decodeURIComponent(url);
 
   const agent = new https.Agent({ rejectUnauthorized: false });
@@ -34,16 +34,16 @@ export default async function handler(req, res) {
       timeout: 30000,
       headers: {
         'User-Agent': req.headers['user-agent'] || '',
-        'Accept': '*/*'
-      }
+        'Accept': '*/*',
+      },
     });
-  } catch(e) {
-    return res.status(500).send("Fetch error: " + e.message);
+  } catch (e) {
+    return res.status(500).send('Fetch error: ' + e.message);
   }
 
   const contentType = response.headers['content-type'] || 'application/octet-stream';
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Content-Type", contentType);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Content-Type', contentType);
 
   const headers = { ...response.headers };
   delete headers['content-security-policy'];
@@ -62,28 +62,51 @@ export default async function handler(req, res) {
   }
 
   let data = response.data;
+  const proxyBase = '/api/proxy?url=';
 
   if (!isJs && contentType.includes('text/html')) {
     const baseUrl = new URL(url);
 
-    data = data.replace(/(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi, (match, attr, link) => {
-      if (!link || link.startsWith('data:') || link.startsWith('mailto:') || link.startsWith('javascript:')) return match;
-      const absolute = new URL(link, baseUrl).toString();
-      return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
-    });
+    data = data.replace(
+      /(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi,
+      (match, attr, link) => {
+        if (
+          !link ||
+          link.startsWith('data:') ||
+          link.startsWith('mailto:') ||
+          link.startsWith('javascript:') ||
+          link.includes(proxyBase)
+        )
+          return match;
+        const absolute = new URL(link, baseUrl).toString();
+        return `${attr}="${proxyBase}${encodeURIComponent(absolute)}"`;
+      }
+    );
 
     data = data.replace(/<form[^>]*action=["']([^"']+)["']/gi, (match, link) => {
-      if (!link || link.startsWith('javascript:') || link.startsWith('mailto:')) return match;
+      if (
+        !link ||
+        link.startsWith('javascript:') ||
+        link.startsWith('mailto:') ||
+        link.includes(proxyBase)
+      )
+        return match;
       const absolute = new URL(link, baseUrl).toString();
-      return match.replace(link, `/api/proxy?url=${encodeURIComponent(absolute)}`);
+      return match.replace(link, `${proxyBase}${encodeURIComponent(absolute)}`);
     });
 
-    data = data.replace(/url\(["']?(?!data:|http|\/\/)([^"')]+)["']?\)/gi, (match, relativePath) => {
-      const absolute = new URL(relativePath, baseUrl).toString();
-      return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
-    });
+    data = data.replace(
+      /url\(["']?(?!data:|http|\/\/)([^"')]+)["']?\)/gi,
+      (match, relativePath) => {
+        const absolute = new URL(relativePath, baseUrl).toString();
+        return `url('${proxyBase}${encodeURIComponent(absolute)}')`;
+      }
+    );
 
-    if (injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
+    data = data.replace(
+      /<\/head>/i,
+      `<script>${injectJS}</script><script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}</script></head>`
+    );
   }
 
   return res.status(response.status).send(data);

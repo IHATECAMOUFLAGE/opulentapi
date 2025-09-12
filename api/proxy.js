@@ -16,21 +16,19 @@ export default async function handler(req, res) {
     return res.status(204).end();
   }
 
-  let { url } = req.query;
+  let { url, rawhtml } = req.query;
   if (!url) return res.status(400).send('Missing `url` query parameter.');
   url = decodeURIComponent(url);
+  rawhtml = rawhtml === 'true';
 
   const agent = new https.Agent({ rejectUnauthorized: false });
-
-  let isBinary = /\.(png|jpe?g|gif|webp|bmp|svg|woff2?|ttf|eot|otf|ico)$/i.test(url);
-  let isJs = /\.js$/i.test(url);
-  let isJson = /\.json$/i.test(url);
+  const proxyBase = '/api/proxy?url=';
 
   let response;
   try {
     response = await axios.get(url, {
       httpsAgent: agent,
-      responseType: isBinary ? 'arraybuffer' : 'text',
+      responseType: 'text',
       timeout: 30000,
       headers: {
         'User-Agent': req.headers['user-agent'] || '',
@@ -43,16 +41,14 @@ export default async function handler(req, res) {
     return res.status(500).send('Fetch error: ' + e.message);
   }
 
-  const contentType = response.headers['content-type'] || 'application/octet-stream';
+  const contentType = response.headers['content-type'] || 'text/html';
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Type', 'text/html');
 
   const headers = { ...response.headers };
   delete headers['content-security-policy'];
   delete headers['content-security-policy-report-only'];
   delete headers['x-frame-options'];
-
-  const proxyBase = '/api/proxy?url=';
 
   for (const [key, value] of Object.entries(headers)) {
     res.setHeader(key, value);
@@ -65,60 +61,58 @@ export default async function handler(req, res) {
     } catch (e) {}
   }
 
-  if (isBinary) {
-    return res.status(response.status).send(Buffer.from(response.data));
-  }
-
-  if (isJson) {
-    return res.status(response.status).json(response.data);
-  }
-
   let data = response.data;
+  const baseUrl = new URL(url);
 
-  if (!isJs && contentType.includes('text/html')) {
-    const baseUrl = new URL(url);
-
-    data = data.replace(
-      /(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi,
-      (match, attr, link) => {
-        if (
-          !link ||
-          link.startsWith('data:') ||
-          link.startsWith('mailto:') ||
-          link.startsWith('javascript:') ||
-          link.includes(proxyBase)
-        )
-          return match;
-        const absolute = new URL(link, baseUrl).toString();
-        return `${attr}="${proxyBase}${encodeURIComponent(absolute)}"`;
-      }
-    );
-
-    data = data.replace(/<form[^>]*action=["']([^"']+)["']/gi, (match, link) => {
-      if (
-        !link ||
-        link.startsWith('javascript:') ||
-        link.startsWith('mailto:') ||
-        link.includes(proxyBase)
-      )
-        return match;
+  data = data.replace(
+    /(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi,
+    (match, attr, link) => {
+      if (!link || link.startsWith('data:') || link.startsWith('mailto:') || link.startsWith('javascript:') || link.includes(proxyBase)) return match;
       const absolute = new URL(link, baseUrl).toString();
-      return match.replace(link, `${proxyBase}${encodeURIComponent(absolute)}`);
-    });
+      return `${attr}="${proxyBase}${encodeURIComponent(absolute)}"`;
+    }
+  );
 
-    data = data.replace(
-      /url\(["']?(?!data:|http|\/\/)([^"')]+)["']?\)/gi,
-      (match, relativePath) => {
-        const absolute = new URL(relativePath, baseUrl).toString();
-        return `url('${proxyBase}${encodeURIComponent(absolute)}')`;
-      }
-    );
+  data = data.replace(/<form[^>]*action=["']([^"']+)["']/gi, (match, link) => {
+    if (!link || link.startsWith('javascript:') || link.startsWith('mailto:') || link.includes(proxyBase)) return match;
+    const absolute = new URL(link, baseUrl).toString();
+    return match.replace(link, `${proxyBase}${encodeURIComponent(absolute)}`);
+  });
 
-    data = data.replace(
-      /<\/head>/i,
-      `<script>${injectJS}</script><script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}</script></head>`
-    );
+  data = data.replace(/url\(["']?(?!data:|http|\/\/)([^"')]+)["']?\)/gi, (match, relativePath) => {
+    const absolute = new URL(relativePath, baseUrl).toString();
+    return `url('${proxyBase}${encodeURIComponent(absolute)}')`;
+  });
+
+  if (injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
+
+  if (rawhtml) {
+    return res.status(response.status).send(data);
   }
 
-  return res.status(response.status).send(data);
+  const blobWrapper = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Proxied Page</title>
+</head>
+<body style="margin:0;padding:0;overflow:hidden;">
+<script>
+  const html = \`${data.replace(/`/g,'\\`')}\`;
+  const blob = new Blob([html], {type:'text/html'});
+  const iframe = document.createElement('iframe');
+  iframe.src = URL.createObjectURL(blob);
+  iframe.style.width='100%';
+  iframe.style.height='100vh';
+  iframe.style.border='none';
+  document.body.appendChild(iframe);
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  }
+</script>
+</body>
+</html>`;
+
+  return res.status(response.status).send(blobWrapper);
 }

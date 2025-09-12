@@ -19,8 +19,8 @@ export default async function handler(req, res) {
   let { url } = req.query;
   if (!url) return res.status(400).send('Missing `url` query parameter.');
 
-  const isRaw = url.includes('###RAWHTML###');
-  url = decodeURIComponent(url.replace('###RAWHTML###', ''));
+  const isRaw = req.url.startsWith('/raw/proxy.js');
+  url = decodeURIComponent(url);
 
   const agent = new https.Agent({ rejectUnauthorized: false });
   const proxyBase = '/api/proxy?url=';
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
   let data = response.data;
   const baseUrl = new URL(url);
 
-  // Rewrite all standard tags
+  // Rewrite standard attributes
   data = data.replace(
     /(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi,
     (match, attr, link) => {
@@ -77,7 +77,7 @@ export default async function handler(req, res) {
     return match.replace(link, `${proxyBase}${encodeURIComponent(absolute)}`);
   });
 
-  // Rewrite inline CSS urls
+  // Rewrite CSS urls
   data = data.replace(/url\(["']?(?!data:|http|\/\/)([^"')]+)["']?\)/gi, (match, relativePath) => {
     const absolute = new URL(relativePath, baseUrl).toString();
     return `url('${proxyBase}${encodeURIComponent(absolute)}')`;
@@ -93,7 +93,7 @@ export default async function handler(req, res) {
     }
   );
 
-  // Rewrite @import inside <style>
+  // Rewrite @import in <style>
   data = data.replace(/@import\s+["']([^"']+)["']/gi, (match, href) => {
     if (!href || href.startsWith('data:') || href.startsWith('http') || href.startsWith('//')) return match;
     const absolute = new URL(href, baseUrl).toString();
@@ -102,33 +102,6 @@ export default async function handler(req, res) {
 
   if (injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
 
-  if (isRaw) {
-    return res.status(response.status).send(data);
-  }
-
-  const blobWrapper = `
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Proxied Page</title>
-</head>
-<body style="margin:0;padding:0;overflow:hidden;">
-<script>
-  const html = \`${data.replace(/`/g,'\\`')}\`;
-  const blob = new Blob([html], {type:'text/html'});
-  const iframe = document.createElement('iframe');
-  iframe.src = URL.createObjectURL(blob);
-  iframe.style.width='100%';
-  iframe.style.height='100vh';
-  iframe.style.border='none';
-  document.body.appendChild(iframe);
-  if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('/sw.js').catch(()=>{});
-  }
-</script>
-</body>
-</html>`;
-
-  return res.status(response.status).send(blobWrapper);
+  res.setHeader('Content-Type', 'text/html');
+  return res.status(response.status).send(data);
 }

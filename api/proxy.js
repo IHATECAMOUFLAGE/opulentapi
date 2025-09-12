@@ -79,14 +79,13 @@ iframe#mainProxy{position:absolute;top:0;left:0;right:0;bottom:0;width:100%;heig
 <div id="chromeMenu"></div><div id="appList"></div>
 <button id="menuButton">☰ Menu</button>
 <div id="menuDropdown"><div class="menuItem" id="addSideWindow">Add Side Window</div><div class="menuItem"><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="editToggle"> Enable Editing</label></div></div>
-<iframe id="mainProxy" src="${baseUrl.toString()}"></iframe>
+<iframe id="mainProxy" src="/api/proxy?url=${encodeURIComponent(baseUrl.toString())}"></iframe>
 <div id="windowsContainer"></div>
 <script>
 const menuButton=document.getElementById('menuButton');
 const menuDropdown=document.getElementById('menuDropdown');
 menuButton.onclick=(e)=>{e.stopPropagation();menuDropdown.style.display=menuDropdown.style.display==='flex'?'none':'flex';menuDropdown.style.flexDirection='column';};
 document.addEventListener('click',(e)=>{if(!menuDropdown.contains(e.target)&&e.target!==menuButton)menuDropdown.style.display='none';});
-
 const maxWindows=4;
 let windows=[];
 function addSideWindow(url){
@@ -98,7 +97,7 @@ const favicon=document.createElement('img');favicon.className='favicon';
 const label=document.createElement('span');label.className='windowLabel';label.textContent=url;
 const minimizeBtn=document.createElement('button');minimizeBtn.textContent='—';minimizeBtn.style.marginLeft='6px';
 header.appendChild(favicon);header.appendChild(label);header.appendChild(minimizeBtn);
-const iframe=document.createElement('iframe');iframe.className='windowFrame';iframe.src=url;
+const iframe=document.createElement('iframe');iframe.className='windowFrame';iframe.src='/api/proxy?url='+encodeURIComponent(url);
 wrapper.appendChild(header);wrapper.appendChild(iframe);
 container.appendChild(wrapper);
 windows.push({wrapper,label,iframe,favicon,url,minimized:false});
@@ -115,7 +114,7 @@ chromeMenu.addEventListener('mouseenter',()=>{appList.style.display='flex';});
 chromeMenu.addEventListener('mouseleave',()=>{appList.style.display='none';});
 document.getElementById('addSideWindow').onclick=()=>{const url=prompt('Enter URL for side window:');if(url)addSideWindow(url);};
 const editToggle=document.getElementById('editToggle');
-editToggle.onchange=()=>{const editable=editToggle.checked;setEditable(document.getElementById('mainProxy').contentDocument?.body,editable);document.querySelectorAll('.windowFrame').forEach(f=>{setEditable(f.contentDocument?.body,editable);});};
+editToggle.onchange=()=>{const editable=editToggle.checked;windows.forEach(w=>{setEditable(w.iframe.contentDocument?.body,editable);});setEditable(document.getElementById('mainProxy').contentDocument?.body,editable);};
 function setEditable(el,enabled){if(!el)return;if(el.id==='menuDropdown'||el.id==='menuButton'||el.classList.contains('windowHeader'))return;el.contentEditable=enabled;for(const child of el.children)setEditable(child,enabled);}
 </script></body></html>`;
 return res.status(response.status).send(wrappedHTML);

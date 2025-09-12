@@ -16,6 +16,12 @@ return{title:titleMatch?titleMatch[1]:url,favicon:iconMatch?new URL(iconMatch[1]
 }catch(e){return{title:url,favicon:url+'/favicon.ico'};}
 }
 
+function rewriteHTML(html,baseUrl){
+html=html.replace(/(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi,(m,attr,link)=>{if(!link||link.startsWith('data:')||link.startsWith('mailto:')||link.startsWith('javascript:'))return m;const absolute=new URL(link,baseUrl).toString();return`${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;});
+html=html.replace(/url\(["']?(?!data:|http|\/\/)([^"')]+)["']?\)/gi,(m,relativePath)=>{const absolute=new URL(relativePath,baseUrl).toString();return`url('/api/proxy?url=${encodeURIComponent(absolute)}')`;});
+return html;
+}
+
 export default async function handler(req,res){
 if(req.method==='OPTIONS'){
 res.setHeader("Access-Control-Allow-Origin","*");
@@ -53,10 +59,8 @@ return res.status(response.status).send(`<!DOCTYPE html><html><head><meta charse
 }
 if(!isJs&&contentType.includes('text/html')){
 const baseUrl=new URL(targetUrl);
-data=data.replace(/(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi,(m,attr,link)=>{if(!link||link.startsWith('data:')||link.startsWith('mailto:')||link.startsWith('javascript:'))return m;const absolute=new URL(link,baseUrl).toString();return`${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;});
-data=data.replace(/<form[^>]*action=["']([^"']+)["']/gi,(m,link)=>{if(!link||link.startsWith('javascript:')||link.startsWith('mailto:'))return m;const absolute=new URL(link,baseUrl).toString();return m.replace(link,`/api/proxy?url=${encodeURIComponent(absolute)}`);});
-data=data.replace(/url\(["']?(?!data:|http|\/\/)([^"')]+)["']?\)/gi,(m,relativePath)=>{const absolute=new URL(relativePath,baseUrl).toString();return`url('/api/proxy?url=${encodeURIComponent(absolute)}')`;});
-if(injectJS)data=data=data.replace(/<\/head>/i,`<script>${injectJS}</script></head>`);
+data=rewriteHTML(data,baseUrl);
+if(injectJS)data=data.replace(/<\/head>/i,`<script>${injectJS}</script></head>`);
 const wrappedHTML=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Proxy</title><style>
 body{margin:0;padding:0;overflow:hidden;font-family:sans-serif;background:#111;color:#fff;}
 #menuButton{position:fixed;top:10px;right:10px;padding:6px 12px;background:#333;color:#fff;border:none;border-radius:6px;cursor:pointer;z-index:999;transition:0.2s;}

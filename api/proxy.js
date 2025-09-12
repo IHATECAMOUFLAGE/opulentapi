@@ -48,6 +48,21 @@ for(const[key,value]of Object.entries(headers))res.setHeader(key,value);
 if(isBinary)return res.status(response.status).send(Buffer.from(response.data));
 if(isJson)return res.status(response.status).json(response.data);
 let data=response.data;
+if(isRaw){
+const escaped=data.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const htmlCodePage=`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Raw HTML</title>
+<style>
+body{background:#111;color:#0f0;font-family:monospace;padding:20px;white-space:pre-wrap;}
+</style>
+</head>
+<body><pre>${escaped}</pre></body>
+</html>`;
+return res.status(response.status).send(htmlCodePage);
+}
 if(!isJs&&contentType.includes('text/html')){
 const baseUrl=new URL(targetUrl);
 data=data.replace(/(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi,(m,attr,link)=>{
@@ -69,69 +84,56 @@ const wrappedHTML=`<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Mini Proxy Browser</title>
+<title>Proxy Multi-Window</title>
 <style>
 body{margin:0;background:#111;color:#fff;font-family:sans-serif;overflow:hidden;}
 #toolbar{display:flex;padding:10px;background:linear-gradient(90deg,#1a1a1a,#222);gap:10px;align-items:center;}
 #urlInput{flex:1;background:#222;border:none;color:#fff;padding:6px 10px;border-radius:6px;outline:none;}
-#openTab{background:#333;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;transition:0.2s;}
-#openTab:hover{background:#444;}
-#tabsContainer{position:absolute;top:50px;left:0;right:0;bottom:0;}
-.tabFrame{position:absolute;border:2px solid #333;border-radius:8px;resize:both;overflow:auto;width:500px;height:300px;}
+#addWindow{background:#333;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;transition:0.2s;}
+#addWindow:hover{background:#444;}
+#windowsContainer{position:absolute;top:50px;left:0;right:0;bottom:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:4px;}
+.windowWrapper{position:relative;border:2px solid #333;border-radius:6px;overflow:hidden;}
+.windowHeader{display:flex;align-items:center;padding:2px 6px;background:#222;color:#fff;cursor:default;}
+.favicon{width:16px;height:16px;margin-right:6px;}
+.windowLabel{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.windowFrame{width:100%;height:calc(100% - 24px);border:none;}
 </style>
 </head>
 <body>
 <div id="toolbar">
 <input id="urlInput" type="text" value="${baseUrl.toString()}">
-<button id="openTab">Open Tab</button>
+<button id="addWindow">Add Side Window</button>
 </div>
-<div id="tabsContainer">
-<iframe class="tabFrame" src="/api/proxy?url=${encodeURIComponent(baseUrl.toString())}" title="${baseUrl.hostname}"></iframe>
+<div id="windowsContainer">
+<div class="windowWrapper">
+<div class="windowHeader">
+<img class="favicon" src="/api/proxy?url=${encodeURIComponent(baseUrl.origin)}/favicon.ico">
+<span class="windowLabel">${baseUrl.hostname}</span>
+</div>
+<iframe class="windowFrame" src="/api/proxy?url=${encodeURIComponent(baseUrl.toString())}"></iframe>
+</div>
 </div>
 <script>
-let tabCounter=1;
-function makeDraggable(el){
-let offsetX,offsetY;
-el.onmousedown=function(e){
-offsetX=e.clientX-el.offsetLeft;
-offsetY=e.clientY-el.offsetTop;
-document.onmousemove=function(e){
-el.style.left=(e.clientX-offsetX)+'px';
-el.style.top=(e.clientY-offsetY)+'px';
-};
-document.onmouseup=function(){document.onmousemove=null;document.onmouseup=null;};
-};
+const maxWindows=4;
+function addWindow(url){
+const container=document.getElementById('windowsContainer');
+if(container.children.length>=maxWindows)return;
+const wrapper=document.createElement('div');wrapper.className='windowWrapper';
+const header=document.createElement('div');header.className='windowHeader';
+const favicon=document.createElement('img');favicon.className='favicon';
+try{favicon.src='/api/proxy?url='+encodeURIComponent(new URL(url).origin)+'/favicon.ico';}catch{}
+const label=document.createElement('span');label.className='windowLabel';label.textContent=url;
+header.appendChild(favicon);header.appendChild(label);
+const iframe=document.createElement('iframe');iframe.className='windowFrame';
+iframe.src='/api/proxy?url='+encodeURIComponent(url);
+wrapper.appendChild(header);wrapper.appendChild(iframe);
+container.appendChild(wrapper);
 }
-document.getElementById('openTab').onclick=()=>{
-const url=document.getElementById('urlInput').value;
-const iframe=document.createElement('iframe');
-iframe.className='tabFrame';
-iframe.src='/api/proxy?url='+encodeURIComponent(url);
-iframe.style.top=20+tabCounter*20+'px';
-iframe.style.left=20+tabCounter*20+'px';
-iframe.title=url;
-document.getElementById('tabsContainer').appendChild(iframe);
-makeDraggable(iframe);
-tabCounter++;
-};
-const iframes=document.querySelectorAll('.tabFrame');
-iframes.forEach(makeDraggable);
-window.open=(url,name,opts)=>{
-if(!url)return null;
-const iframe=document.createElement('iframe');
-iframe.className='tabFrame';
-iframe.src='/api/proxy?url='+encodeURIComponent(url);
-iframe.style.top='50px';
-iframe.style.left='50px';
-iframe.title=url;
-document.getElementById('tabsContainer').appendChild(iframe);
-makeDraggable(iframe);
-return iframe;
-};
+document.getElementById('addWindow').onclick=()=>{const url=document.getElementById('urlInput').value;addWindow(url);};
+window.open=(url,name,opts)=>{addWindow(url);return null;};
 </script>
 </body>
 </html>`;
-if(isRaw)return res.status(response.status).send(data);
 return res.status(response.status).send(wrappedHTML);
 }
 return res.status(response.status).send(data);

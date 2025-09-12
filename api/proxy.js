@@ -61,6 +61,7 @@ export default async function handler(req, res) {
   let data = response.data;
   const baseUrl = new URL(url);
 
+  // Rewrite all standard tags
   data = data.replace(
     /(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi,
     (match, attr, link) => {
@@ -76,9 +77,27 @@ export default async function handler(req, res) {
     return match.replace(link, `${proxyBase}${encodeURIComponent(absolute)}`);
   });
 
+  // Rewrite inline CSS urls
   data = data.replace(/url\(["']?(?!data:|http|\/\/)([^"')]+)["']?\)/gi, (match, relativePath) => {
     const absolute = new URL(relativePath, baseUrl).toString();
     return `url('${proxyBase}${encodeURIComponent(absolute)}')`;
+  });
+
+  // Rewrite <link rel="stylesheet">
+  data = data.replace(
+    /<link\s+([^>]*?)href=["']([^"']+)["']([^>]*)>/gi,
+    (match, pre, href, post) => {
+      if (!href || href.startsWith('data:') || href.startsWith('javascript:')) return match;
+      const absolute = new URL(href, baseUrl).toString();
+      return `<link ${pre} href="${proxyBase}${encodeURIComponent(absolute)}"${post}>`;
+    }
+  );
+
+  // Rewrite @import inside <style>
+  data = data.replace(/@import\s+["']([^"']+)["']/gi, (match, href) => {
+    if (!href || href.startsWith('data:') || href.startsWith('http') || href.startsWith('//')) return match;
+    const absolute = new URL(href, baseUrl).toString();
+    return `@import "${proxyBase}${encodeURIComponent(absolute)}"`;
   });
 
   if (injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);

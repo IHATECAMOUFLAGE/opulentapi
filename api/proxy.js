@@ -16,20 +16,22 @@ export default async function handler(req, res) {
     return res.status(204).end();
   }
 
-  let { url, raw } = req.query;
-  if (!url) return res.status(400).send("Missing `url` query parameter.");
-  url = decodeURIComponent(url);
-  const isRaw = raw !== undefined;
+  // Use `raw` param as URL if present
+  let targetUrl = req.query.raw || req.query.url;
+  if (!targetUrl) return res.status(400).send("Missing `url` or `raw` query parameter.");
+  targetUrl = decodeURIComponent(targetUrl);
+
+  const isRaw = !!req.query.raw;
 
   const agent = new https.Agent({ rejectUnauthorized: false });
 
-  let isBinary = /\.(png|jpe?g|gif|webp|bmp|svg|woff2?|ttf|eot|otf|ico)$/i.test(url);
-  let isJs = /\.js$/i.test(url);
-  let isJson = /\.json$/i.test(url);
+  let isBinary = /\.(png|jpe?g|gif|webp|bmp|svg|woff2?|ttf|eot|otf|ico)$/i.test(targetUrl);
+  let isJs = /\.js$/i.test(targetUrl);
+  let isJson = /\.json$/i.test(targetUrl);
 
   let response;
   try {
-    response = await axios.get(url, {
+    response = await axios.get(targetUrl, {
       httpsAgent: agent,
       responseType: isBinary ? 'arraybuffer' : 'text',
       timeout: 30000,
@@ -65,7 +67,7 @@ export default async function handler(req, res) {
   let data = response.data;
 
   if (!isJs && contentType.includes('text/html')) {
-    const baseUrl = new URL(url);
+    const baseUrl = new URL(targetUrl);
 
     data = data.replace(/(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi, (match, attr, link) => {
       if (!link || link.startsWith('data:') || link.startsWith('mailto:') || link.startsWith('javascript:')) return match;
@@ -87,11 +89,11 @@ export default async function handler(req, res) {
     if (injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
   }
 
-  // If raw= query is set, just return the rewritten HTML
+  // If `raw` query is used, return raw HTML
   if (isRaw) {
     return res.status(response.status).send(data);
   }
 
-  // Normal behavior (classic proxied page)
+  // Otherwise, return normal proxied page
   return res.status(response.status).send(data);
 }

@@ -80,42 +80,47 @@ const absolute=new URL(relativePath,baseUrl).toString();
 return`url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
 });
 if(injectJS)data=data.replace(/<\/head>/i,`<script>${injectJS}</script></head>`);
+
 const wrappedHTML=`<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Proxy Multi-Window</title>
+<title>Proxy</title>
 <style>
-body{margin:0;background:#111;color:#fff;font-family:sans-serif;overflow:hidden;}
-#toolbar{display:flex;padding:10px;background:linear-gradient(90deg,#1a1a1a,#222);gap:10px;align-items:center;}
-#urlInput{flex:1;background:#222;border:none;color:#fff;padding:6px 10px;border-radius:6px;outline:none;}
-#addWindow{background:#333;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;transition:0.2s;}
-#addWindow:hover{background:#444;}
-#windowsContainer{position:absolute;top:50px;left:0;right:0;bottom:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:4px;}
-.windowWrapper{position:relative;border:2px solid #333;border-radius:6px;overflow:hidden;}
+body{margin:0;padding:0;overflow:hidden;font-family:sans-serif;background:#111;color:#fff;}
+#menuButton{position:fixed;top:10px;right:10px;padding:6px 12px;background:#333;color:#fff;border:none;border-radius:6px;cursor:pointer;z-index:999;transition:0.2s;}
+#menuButton:hover{background:#444;}
+#menuDropdown{position:fixed;top:40px;right:10px;background:#222;border:1px solid #444;border-radius:6px;display:none;flex-direction:column;z-index:999;min-width:180px;}
+.menuItem{padding:6px 10px;cursor:pointer;color:#fff;transition:0.2s;}
+.menuItem:hover{background:#333;}
+#windowsContainer{position:absolute;top:0;left:0;right:0;bottom:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:4px;pointer-events:none;}
+.windowWrapper{position:relative;border:2px solid #333;border-radius:6px;overflow:hidden;pointer-events:auto;}
 .windowHeader{display:flex;align-items:center;padding:2px 6px;background:#222;color:#fff;cursor:default;}
 .favicon{width:16px;height:16px;margin-right:6px;}
 .windowLabel{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .windowFrame{width:100%;height:calc(100% - 24px);border:none;}
+iframe#mainProxy{position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;border:none;}
 </style>
 </head>
 <body>
-<div id="toolbar">
-<input id="urlInput" type="text" value="${baseUrl.toString()}">
-<button id="addWindow">Add Side Window</button>
-</div>
-<div id="windowsContainer">
-<div class="windowWrapper">
-<div class="windowHeader">
-<img class="favicon" src="/api/proxy?url=${encodeURIComponent(baseUrl.origin)}/favicon.ico">
-<span class="windowLabel">${baseUrl.hostname}</span>
-</div>
-<iframe class="windowFrame" src="/api/proxy?url=${encodeURIComponent(baseUrl.toString())}"></iframe>
+<button id="menuButton">☰ Menu</button>
+<div id="menuDropdown">
+<div class="menuItem" id="addSideWindow">Add Side Window</div>
+<div class="menuItem">
+<label style="display:flex;align-items:center;gap:6px;">
+<input type="checkbox" id="editToggle"> Enable Editing
+</label>
 </div>
 </div>
+<iframe id="mainProxy" src="/api/proxy?url=${encodeURIComponent(baseUrl.toString())}"></iframe>
+<div id="windowsContainer"></div>
 <script>
+const menuButton=document.getElementById('menuButton');
+const menuDropdown=document.getElementById('menuDropdown');
+menuButton.onclick=()=>{menuDropdown.style.display=menuDropdown.style.display==='flex'?'none':'flex';menuDropdown.style.flexDirection='column';};
+
 const maxWindows=4;
-function addWindow(url){
+function addSideWindow(url){
 const container=document.getElementById('windowsContainer');
 if(container.children.length>=maxWindows)return;
 const wrapper=document.createElement('div');wrapper.className='windowWrapper';
@@ -129,11 +134,31 @@ iframe.src='/api/proxy?url='+encodeURIComponent(url);
 wrapper.appendChild(header);wrapper.appendChild(iframe);
 container.appendChild(wrapper);
 }
-document.getElementById('addWindow').onclick=()=>{const url=document.getElementById('urlInput').value;addWindow(url);};
-window.open=(url,name,opts)=>{addWindow(url);return null;};
+
+document.getElementById('addSideWindow').onclick=()=>{
+const url=prompt('Enter URL for side window:');
+if(url)addSideWindow(url);
+};
+
+const editToggle=document.getElementById('editToggle');
+editToggle.onchange=()=>{
+const editable=editToggle.checked;
+setEditable(document.getElementById('mainProxy').contentDocument?.body, editable);
+document.querySelectorAll('.windowFrame').forEach(f=>{
+setEditable(f.contentDocument?.body, editable);
+});
+};
+
+function setEditable(el, enabled){
+if(!el) return;
+if(el.id==='menuDropdown'||el.id==='menuButton'||el.classList.contains('windowHeader')) return;
+el.contentEditable=enabled;
+for(const child of el.children) setEditable(child, enabled);
+}
 </script>
 </body>
 </html>`;
+
 return res.status(response.status).send(wrappedHTML);
 }
 return res.status(response.status).send(data);

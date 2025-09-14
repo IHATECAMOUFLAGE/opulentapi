@@ -22,12 +22,22 @@ function rewriteHTML(html, baseUrl) {
 
   const hostname = baseUrl.hostname.toLowerCase();
   if (hostname.includes('google.com') && !hostname.endsWith('.google.com')) {
-    html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, (match, inner) => {
-      return inner.replace(
-        /<input([^>]*name=["']q["'][^>]*)>/i,
-        `<input$1 onkeydown="if(event.key==='Enter'){event.preventDefault();var q=this.value;window.location='/api/proxy?url=https://www.google.com/search?q='+encodeURIComponent(q);}">`
-      );
-    });
+    html = html.replace(/<\/body>/i, `
+      <script>
+        window.addEventListener('DOMContentLoaded', function(){
+          const input = document.querySelector('input[name=q]');
+          if(input){
+            input.addEventListener('keydown', function(e){
+              if(e.key === 'Enter'){
+                e.preventDefault();
+                const q = input.value;
+                window.location.href = '/api/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + q);
+              }
+            });
+          }
+        });
+      </script>
+    </body>`);
   }
 
   return html;

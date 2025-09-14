@@ -20,9 +20,9 @@ function rewriteHTML(html, baseUrl) {
   });
 
   const hostname = baseUrl.hostname.toLowerCase();
-  if ((hostname === 'google.com' || hostname === 'www.google.com')) {
+  if (hostname === 'google.com' || hostname === 'www.google.com') {
     html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/i, (match, inner) => {
-      return `<div onsubmit="event.preventDefault();var q=this.querySelector('input[name=q]').value;window.location='/api/proxy?url=https://www.google.com/search?q='+encodeURIComponent(q);">${inner}</div>`;
+      return `<div onkeydown="if(event.key==='Enter'){event.preventDefault();var q=this.querySelector('input[name=q]').value;window.location='/api/proxy?url=https://www.google.com/search?q='+encodeURIComponent(q);}">${inner}</div>`;
     });
   }
   return html;

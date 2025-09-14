@@ -20,25 +20,25 @@ function rewriteHTML(html, baseUrl) {
     return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
   });
 
-  const hostname = baseUrl.hostname.toLowerCase();
   if (hostname.includes('google.com') && !hostname.endsWith('.google.com')) {
-    html = html.replace(/<\/body>/i, `
-      <script>
-        window.addEventListener('DOMContentLoaded', function(){
-          const input = document.querySelector('input[name=q]');
-          if(input){
-            input.addEventListener('keydown', function(e){
-              if(e.key === 'Enter'){
-                e.preventDefault();
-                const q = input.value;
-                window.location.href = '/api/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + q);
-              }
-            });
-          }
-        });
-      </script>
-    </body>`);
-  }
+  html = html.replace(/<\/body>/i, `
+    <script>
+      window.addEventListener('DOMContentLoaded', function(){
+        const input = document.querySelector('input[name=q]');
+        if(input){
+          input.addEventListener('keydown', function(e){
+            if(e.key === 'Enter'){
+              e.preventDefault();
+              const q = input.value;
+              const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(q);
+              window.location.href = '/api/proxy?url=' + encodeURIComponent(searchUrl);
+            }
+          });
+        }
+      });
+    </script>
+  </body>`);
+}
 
   return html;
 }

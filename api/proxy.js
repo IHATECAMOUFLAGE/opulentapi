@@ -27,32 +27,29 @@ function rewriteHTML(html, baseUrl) {
     html = html.replace(/<\/body>/i, `
       <script>
         window.addEventListener('DOMContentLoaded', function() {
-          const searchContainer = document.querySelector('form'); 
-          if(searchContainer){
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.name = 'q';
-            input.placeholder = 'Search Google';
-            input.style.width = '100%';
-            input.style.height = '100%';
-            input.style.background = 'transparent';
-            input.style.border = 'none';
-            input.style.outline = 'none';
-            input.style.color = 'black';
-            input.style.fontFamily = 'Roboto, Arial, sans-serif';
-            input.style.fontSize = '16px';
-            input.style.padding = '0';
-            input.style.margin = '0';
-            searchContainer.prepend(input);
+          const container = document.querySelector('div[role=search]') || document.body;
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.placeholder = 'Search Google';
+          input.style.width = '100%';
+          input.style.height = '100%';
+          input.style.background = 'transparent';
+          input.style.border = 'none';
+          input.style.outline = 'none';
+          input.style.color = 'black';
+          input.style.fontFamily = 'Roboto, Arial, sans-serif';
+          input.style.fontSize = '16px';
+          input.style.padding = '0';
+          input.style.margin = '0';
+          container.prepend(input);
 
-            input.addEventListener('keydown', function(e){
-              if(e.key === 'Enter'){
-                e.preventDefault();
-                const q = input.value;
-                if(q) window.location.href = '/api/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + q);
-              }
-            });
-          }
+          input.addEventListener('keydown', function(e) {
+            if(e.key === 'Enter') {
+              e.preventDefault();
+              const q = input.value;
+              if(q) window.location.href = '/api/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + q);
+            }
+          });
         });
       </script>
     </body>`);

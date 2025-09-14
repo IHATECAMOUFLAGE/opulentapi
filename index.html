@@ -3,58 +3,54 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Proxy Selector</title>
+<title>OpulentAPI</title>
 <style>
 body {
   margin: 0;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #0d0d0d;
+  background: linear-gradient(135deg, #0d0d0d, #1a1a1a);
   color: #f0f0f0;
   display: flex;
   justify-content: center;
   align-items: center;
   height: 100vh;
 }
-.proxy-container {
-  background-color: #1a1a1a;
-  padding: 30px;
-  border-radius: 15px;
-  box-shadow: 0 0 20px rgba(0,0,0,0.7);
-  width: 350px;
+.container {
+  background-color: rgba(20,20,20,0.95);
+  padding: 40px;
+  border-radius: 20px;
+  box-shadow: 0 6px 25px rgba(0,0,0,0.7);
+  width: 400px;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 h1 {
-  margin-bottom: 20px;
-  font-size: 24px;
+  margin: 0;
+  font-size: 32px;
+  color: #ff4d4d;
 }
 input[type="url"] {
   width: 100%;
-  padding: 10px;
-  border-radius: 8px;
-  border: none;
-  margin-bottom: 15px;
-  background-color: #262626;
+  padding: 12px;
+  border-radius: 10px;
+  border: 2px solid #444;
+  background-color: #222;
   color: #f0f0f0;
   font-size: 16px;
 }
 select {
-  width: 100%;
-  padding: 10px;
-  border-radius: 8px;
-  border: none;
-  margin-bottom: 20px;
-  background-color: #262626;
-  color: #f0f0f0;
-  font-size: 16px;
+  display: none;
 }
 button {
   width: 100%;
-  padding: 12px;
-  border-radius: 8px;
+  padding: 14px;
   border: none;
+  border-radius: 10px;
   background-color: #ff4d4d;
   color: #fff;
-  font-size: 16px;
+  font-size: 18px;
   cursor: pointer;
   transition: background 0.3s;
 }
@@ -64,30 +60,22 @@ button:hover {
 </style>
 </head>
 <body>
-<div class="proxy-container">
-<h1>Proxy Selector</h1>
-<input type="url" id="urlInput" placeholder="Enter URL here" required>
-<select id="proxySelect">
-  <option value="opulent">OpulentAPI</option>
-  <option value="camo">CamoAPI</option>
-</select>
-<button id="goButton">Go</button>
+<div class="container">
+  <h1>OpulentAPI</h1>
+  <input type="url" id="urlInput" placeholder="Enter URL here" required>
+  <button id="goButton">Go</button>
 </div>
 <script>
 const input = document.getElementById('urlInput');
-const select = document.getElementById('proxySelect');
 const button = document.getElementById('goButton');
 
 button.addEventListener('click', () => {
-  const url = encodeURIComponent(input.value.trim());
+  let url = input.value.trim().toLowerCase();
   if (!url) return;
-  let proxyUrl = '';
-  if (select.value === 'opulent') {
-    proxyUrl = `/api/proxy.js?url=${url}`;
-  } else {
-    proxyUrl = `/camoapi/index.js?url=${url}`;
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'https://' + url;
   }
-  window.location.href = proxyUrl;
+  window.location.href = `/api/proxy.js?url=${encodeURIComponent(url)}`;
 });
 </script>
 </body>

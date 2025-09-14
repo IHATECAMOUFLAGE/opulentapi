@@ -23,6 +23,34 @@ function rewriteHTML(html, baseUrl) {
   const hostname = baseUrl.hostname.toLowerCase();
   if (hostname.includes('google.com')) {
     html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, '$1');
+
+    html = html.replace(/<\/body>/i, `
+      <script>
+        window.addEventListener('DOMContentLoaded', function() {
+          const input = document.querySelector('input[name=q]');
+          if(input){
+            input.addEventListener('keydown', function(e){
+              if(e.key === 'Enter'){
+                e.preventDefault();
+                const q = input.value;
+                window.location.href = '/api/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + q);
+              }
+            });
+          }
+          const btn = document.querySelector('input[type=submit], button[type=submit]');
+          if(btn){
+            btn.addEventListener('click', function(e){
+              e.preventDefault();
+              const input = document.querySelector('input[name=q]');
+              if(input){
+                const q = input.value;
+                window.location.href = '/api/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + q);
+              }
+            });
+          }
+        });
+      </script>
+    </body>`);
   }
 
   return html;

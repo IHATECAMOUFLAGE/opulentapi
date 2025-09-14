@@ -5,84 +5,113 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Opulent API</title>
 <style>
-body {
-  margin: 0;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(135deg, #0d0d0d, #1a1a1a);
-  color: #f0f0f0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
+html, body {
+    width: 100%;
+    height: 100%;
+    background: rgb(2, 2, 15);
+    overflow-x: hidden;
+    margin: 0;
 }
-.container {
-  background-color: rgba(20,20,20,0.95);
-  padding: 50px 40px;
-  border-radius: 20px;
-  box-shadow: 0 6px 25px rgba(0,0,0,0.7);
-  width: 400px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+.content {
+    width: 100%;
+    height: auto;
+    padding: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
 }
-h1 {
-  margin: 0;
-  font-size: 32px;
-  color: #ff4d4d;
+.content h1, p {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-weight: 400;
+    letter-spacing: 4px;
+    text-shadow: 0px 0px 50px white;
+    color: white;
+    margin: 5px;
 }
-input[type="url"], select, button {
-  width: 100%;
-  padding: 14px;
-  border-radius: 10px;
-  font-size: 16px;
-  border: 2px solid #444;
-  box-sizing: border-box;
+.content .search {
+    gap: 50px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
 }
-input[type="url"], select {
-  background-color: #222;
-  color: #f0f0f0;
+.content .search .box {
+    border: 1px solid white;
+    padding: 60px;
+    border-radius: 10px;
+    box-shadow: 0px 0px 50px rgba(255, 255, 255, 0.222);
+    gap: 10px;
+    text-align: center;
+    justify-content: center;
+    align-items: center;
+    display: flex;
+    flex-direction: column;
 }
-button {
-  background-color: #ff4d4d;
-  color: #fff;
-  border: none;
-  cursor: pointer;
-  transition: background 0.3s;
+.content .search input {
+    width: 500px;
+    height: 50px;
+    margin: 10px;
+    text-align: center;
+    letter-spacing: 2px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-weight: 700;
+    background: none;
+    outline: none;
+    border-radius: 10px;
+    border: 1px solid white;
+    user-select: none;
+    color: gray;
+    box-shadow: 0px 0px 30px rgba(255, 255, 255, 0.142);
 }
-button:hover {
-  background-color: #e60000;
+.content .search select, .content .search button {
+    width: 520px;
+    height: 50px;
+    border-radius: 10px;
+    border: 1px solid white;
+    background: none;
+    color: white;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    box-shadow: 0px 0px 30px rgba(255, 255, 255, 0.142);
+    margin: 5px 0;
+}
+.content .search button:hover, .content .search select:hover {
+    background: rgba(255, 255, 255, 0.05);
 }
 </style>
 </head>
 <body>
-<div class="container">
-  <h1>Opulent API</h1>
-  <input type="url" id="urlInput" placeholder="Enter URL here" required>
-  <select id="proxySelect">
-    <option value="opulent">OpulentAPI</option>
-    <option value="camo">CamoAPI</option>
-  </select>
-  <button id="goButton">Go</button>
+<div class="content">
+    <h1>Opulent API</h1>
+    <p>Enter a URL to proxy</p>
+    <div class="search">
+        <div class="box">
+            <input type="text" id="urlInput" placeholder="Enter URL here">
+            <select id="proxySelect">
+                <option value="/api/proxy.js">OpulentAPI</option>
+                <option value="/api/camoapi">CamoAPI</option>
+            </select>
+            <button id="goBtn">Go</button>
+        </div>
+    </div>
 </div>
 <script>
 const input = document.getElementById('urlInput');
 const select = document.getElementById('proxySelect');
-const button = document.getElementById('goButton');
+const button = document.getElementById('goBtn');
 
 button.addEventListener('click', () => {
-  let url = input.value.trim().toLowerCase();
-  if (!url) return;
-  if (!/^https?:\/\//i.test(url)) {
-    url = 'https://' + url;
-  }
-  let proxyUrl = '';
-  if (select.value === 'opulent') {
-    proxyUrl = `/api/proxy.js?url=${encodeURIComponent(url)}`;
-  } else {
-    proxyUrl = `/camoapi/index.js?url=${encodeURIComponent(url)}`;
-  }
-  window.location.href = proxyUrl;
+    let url = input.value.trim().toLowerCase();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    const proxy = select.value;
+    window.location.href = `${proxy}?url=${encodeURIComponent(url)}`;
+});
+
+input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') button.click();
 });
 </script>
 </body>

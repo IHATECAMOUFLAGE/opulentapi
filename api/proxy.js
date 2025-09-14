@@ -23,7 +23,10 @@ function rewriteHTML(html, baseUrl) {
   const hostname = baseUrl.hostname.toLowerCase();
   if (hostname.includes('google.com') && !hostname.endsWith('.google.com')) {
     html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, (match, inner) => {
-      return `<div style="display:inline;" onkeydown="if(event.key==='Enter'){event.preventDefault();var q=this.querySelector('input[name=q]').value;window.location='/api/proxy?url=https://www.google.com/search?q='+encodeURIComponent(q);}">${inner}</div>`;
+      return inner.replace(
+        /<input([^>]*name=["']q["'][^>]*)>/i,
+        `<input$1 onkeydown="if(event.key==='Enter'){event.preventDefault();var q=this.value;window.location='/api/proxy?url=https://www.google.com/search?q='+encodeURIComponent(q);}">`
+      );
     });
   }
 

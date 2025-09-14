@@ -21,14 +21,8 @@ function rewriteHTML(html, baseUrl) {
   });
 
   const hostname = baseUrl.hostname.toLowerCase();
-
   if (hostname.includes('google.com')) {
-    html = html.replace(/<form[^>]*id=["']?tsf["']?[^>]*>[\s\S]*?<\/form>/i, `
-      <form onsubmit="event.preventDefault(); var q=document.querySelector('#customSearch').value; window.location='/api/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + q);">
-        <input id="customSearch" name="q" type="text">
-        <button type="submit">Search</button>
-      </form>
-    `);
+    html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, '$1');
   }
 
   return html;

@@ -20,25 +20,26 @@ function rewriteHTML(html, baseUrl) {
     return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
   });
 
+  const hostname = baseUrl.hostname.toLowerCase();
   if (hostname.includes('google.com') && !hostname.endsWith('.google.com')) {
-  html = html.replace(/<\/body>/i, `
-    <script>
-      window.addEventListener('DOMContentLoaded', function(){
-        const input = document.querySelector('input[name=q]');
-        if(input){
-          input.addEventListener('keydown', function(e){
-            if(e.key === 'Enter'){
-              e.preventDefault();
-              const q = input.value;
-              const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(q);
-              window.location.href = '/api/proxy?url=' + encodeURIComponent(searchUrl);
-            }
-          });
-        }
-      });
-    </script>
-  </body>`);
-}
+    html = html.replace(/<\/body>/i, `
+      <script>
+        window.addEventListener('DOMContentLoaded', function(){
+          const input = document.querySelector('input[name=q]');
+          if(input){
+            input.addEventListener('keydown', function(e){
+              if(e.key === 'Enter'){
+                e.preventDefault();
+                const q = input.value;
+                const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(q);
+                window.location.href = '/api/proxy?url=' + encodeURIComponent(searchUrl);
+              }
+            });
+          }
+        });
+      </script>
+    </body>`);
+  }
 
   return html;
 }
@@ -53,49 +54,49 @@ export default async function handler(req, res) {
 
   let targetUrl = req.query.raw || req.query.url;
   if (!targetUrl) return res.status(400).send("Missing `url` or `raw` query parameter.");
-  targetUrl = decodeURIComponent(targetUrl);
-  const isRaw = !!req.query.raw;
-  const agent = new https.Agent({ rejectUnauthorized: false });
-  let isBinary = /\.(png|jpe?g|gif|webp|bmp|svg|woff2?|ttf|eot|otf|ico)$/i.test(targetUrl);
-  let isJs = /\.js$/i.test(targetUrl);
-  let isJson = /\.json$/i.test(targetUrl);
-  let response;
 
   try {
+    targetUrl = decodeURIComponent(targetUrl);
+  } catch {
+    return res.status(400).send("Invalid URL encoding.");
+  }
+
+  let response;
+  try {
+    const agent = new https.Agent({ rejectUnauthorized: false });
+    const isBinary = /\.(png|jpe?g|gif|webp|bmp|svg|woff2?|ttf|eot|otf|ico)$/i.test(targetUrl);
+    const isJs = /\.js$/i.test(targetUrl);
+    const isJson = /\.json$/i.test(targetUrl);
+
     response = await axios.get(targetUrl, {
       httpsAgent: agent,
       responseType: isBinary ? 'arraybuffer' : 'text',
-      timeout: 30000,
+      timeout: 20000,
       headers: { 'User-Agent': req.headers['user-agent'] || '', 'Accept': '*/*' }
     });
+
+    const contentType = response.headers['content-type'] || 'application/octet-stream';
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Content-Type", contentType);
+    const headers = { ...response.headers };
+    delete headers['content-security-policy'];
+    delete headers['content-security-policy-report-only'];
+    delete headers['x-frame-options'];
+    for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
+
+    if (isBinary) return res.status(response.status).send(Buffer.from(response.data));
+    if (isJson) return res.status(response.status).json(response.data);
+
+    let data = response.data;
+    if (!isJs && contentType.includes('text/html')) {
+      const baseUrl = new URL(targetUrl);
+      data = rewriteHTML(data, baseUrl);
+      if (injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
+    }
+
+    return res.status(response.status).send(data);
+
   } catch (e) {
     return res.status(500).send("Fetch error: " + e.message);
   }
-
-  const contentType = response.headers['content-type'] || 'application/octet-stream';
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Content-Type", contentType);
-  const headers = { ...response.headers };
-  delete headers['content-security-policy'];
-  delete headers['content-security-policy-report-only'];
-  delete headers['x-frame-options'];
-  for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
-
-  if (isBinary) return res.status(response.status).send(Buffer.from(response.data));
-  if (isJson) return res.status(response.status).json(response.data);
-
-  let data = response.data;
-
-  if (isRaw) {
-    const escaped = data.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    return res.status(response.status).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Raw HTML</title><style>body{background:#111;color:#0f0;font-family:monospace;padding:20px;white-space:pre-wrap;}</style></head><body><pre>${escaped}</pre></body></html>`);
-  }
-
-  if (!isJs && contentType.includes('text/html')) {
-    const baseUrl = new URL(targetUrl);
-    data = rewriteHTML(data, baseUrl);
-    if (injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
-  }
-
-  return res.status(response.status).send(data);
 }

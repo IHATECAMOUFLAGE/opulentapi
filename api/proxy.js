@@ -16,6 +16,19 @@ function rewriteHTML(html,baseUrl){
     const absolute=new URL(relativePath,baseUrl).toString();
     return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
   });
+
+  const urlObj=new URL(baseUrl);
+  const host=urlObj.hostname.toLowerCase();
+  if(host==="google.com"||host==="www.google.com"){
+    html=html.replace(/<form[^>]*role="search"[^>]*>[\s\S]*?<\/form>/i,`
+      <form action="/api/proxy" method="GET" role="search" style="margin:auto;max-width:600px;">
+        <input type="hidden" name="url" value="https://www.google.com/search">
+        <input type="text" name="q" placeholder="Search Google..." style="width:80%;padding:10px;border:1px solid #ccc;border-radius:20px;">
+        <button type="submit" style="padding:10px 16px;border:none;background:#4285F4;color:white;border-radius:20px;">Search</button>
+      </form>
+    `);
+  }
+
   return html;
 }
 

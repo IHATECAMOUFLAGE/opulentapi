@@ -22,28 +22,29 @@ function rewriteHTML(html, baseUrl) {
 
   const hostname = baseUrl.hostname.toLowerCase();
   if (hostname.includes('google.com')) {
-    html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, `
-      <input id="customSearch" type="text" name="q"
-        style="
-          width: 100%;
-          height: 100%;
-          background: transparent;
-          border: none;
-          outline: none;
-          color: black;
-          font-family: Roboto, Arial, sans-serif;
-          font-size: 16px;
-          padding: 0;
-          margin: 0;
-        "
-        placeholder="Search Google">
-    `);
+    html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, '$1');
 
     html = html.replace(/<\/body>/i, `
       <script>
-        window.addEventListener('DOMContentLoaded', function(){
-          const input = document.querySelector('#customSearch');
-          if(input){
+        window.addEventListener('DOMContentLoaded', function() {
+          const searchContainer = document.querySelector('form'); 
+          if(searchContainer){
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.name = 'q';
+            input.placeholder = 'Search Google';
+            input.style.width = '100%';
+            input.style.height = '100%';
+            input.style.background = 'transparent';
+            input.style.border = 'none';
+            input.style.outline = 'none';
+            input.style.color = 'black';
+            input.style.fontFamily = 'Roboto, Arial, sans-serif';
+            input.style.fontSize = '16px';
+            input.style.padding = '0';
+            input.style.margin = '0';
+            searchContainer.prepend(input);
+
             input.addEventListener('keydown', function(e){
               if(e.key === 'Enter'){
                 e.preventDefault();

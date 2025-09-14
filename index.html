@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proxy Selector</title>
+<style>
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #0d0d0d;
+  color: #f0f0f0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+.proxy-container {
+  background-color: #1a1a1a;
+  padding: 30px;
+  border-radius: 15px;
+  box-shadow: 0 0 20px rgba(0,0,0,0.7);
+  width: 350px;
+  text-align: center;
+}
+h1 {
+  margin-bottom: 20px;
+  font-size: 24px;
+}
+input[type="url"] {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  margin-bottom: 15px;
+  background-color: #262626;
+  color: #f0f0f0;
+  font-size: 16px;
+}
+select {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  margin-bottom: 20px;
+  background-color: #262626;
+  color: #f0f0f0;
+  font-size: 16px;
+}
+button {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: none;
+  background-color: #ff4d4d;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+button:hover {
+  background-color: #e60000;
+}
+</style>
+</head>
+<body>
+<div class="proxy-container">
+<h1>Proxy Selector</h1>
+<input type="url" id="urlInput" placeholder="Enter URL here" required>
+<select id="proxySelect">
+  <option value="opulent">OpulentAPI</option>
+  <option value="camo">CamoAPI</option>
+</select>
+<button id="goButton">Go</button>
+</div>
+<script>
+const input = document.getElementById('urlInput');
+const select = document.getElementById('proxySelect');
+const button = document.getElementById('goButton');
+
+button.addEventListener('click', () => {
+  const url = encodeURIComponent(input.value.trim());
+  if (!url) return;
+  let proxyUrl = '';
+  if (select.value === 'opulent') {
+    proxyUrl = `/api/proxy.js?url=${url}`;
+  } else {
+    proxyUrl = `/camoapi/index.js?url=${url}`;
+  }
+  window.location.href = proxyUrl;
+});
+</script>
+</body>
+</html>

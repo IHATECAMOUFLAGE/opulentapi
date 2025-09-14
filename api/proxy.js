@@ -14,17 +14,19 @@ function rewriteHTML(html, baseUrl) {
     const absolute = new URL(link, baseUrl).toString();
     return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
   });
+
   html = html.replace(/url\(["']?(?!data:|http|\/\/)([^"')]+)["']?\)/gi, (m, relativePath) => {
     const absolute = new URL(relativePath, baseUrl).toString();
     return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
   });
 
   const hostname = baseUrl.hostname.toLowerCase();
-  if (hostname === 'google.com' || hostname === 'www.google.com') {
-    html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/i, (match, inner) => {
-      return `<div onkeydown="if(event.key==='Enter'){event.preventDefault();var q=this.querySelector('input[name=q]').value;window.location='/api/proxy?url=https://www.google.com/search?q='+encodeURIComponent(q);}">${inner}</div>`;
+  if (hostname.includes('google.com') && !hostname.endsWith('.google.com')) {
+    html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, (match, inner) => {
+      return `<div style="display:inline;" onkeydown="if(event.key==='Enter'){event.preventDefault();var q=this.querySelector('input[name=q]').value;window.location='/api/proxy?url=https://www.google.com/search?q='+encodeURIComponent(q);}">${inner}</div>`;
     });
   }
+
   return html;
 }
 
@@ -45,8 +47,14 @@ export default async function handler(req, res) {
   let isJs = /\.js$/i.test(targetUrl);
   let isJson = /\.json$/i.test(targetUrl);
   let response;
+
   try {
-    response = await axios.get(targetUrl, { httpsAgent: agent, responseType: isBinary ? 'arraybuffer' : 'text', timeout: 30000, headers: { 'User-Agent': req.headers['user-agent'] || '', 'Accept': '*/*' } });
+    response = await axios.get(targetUrl, {
+      httpsAgent: agent,
+      responseType: isBinary ? 'arraybuffer' : 'text',
+      timeout: 30000,
+      headers: { 'User-Agent': req.headers['user-agent'] || '', 'Accept': '*/*' }
+    });
   } catch (e) {
     return res.status(500).send("Fetch error: " + e.message);
   }

@@ -8,41 +8,21 @@ try {
   injectJS = fs.readFileSync(path.join(process.cwd(), 'lib/rewriter/inject.js'), 'utf8');
 } catch (e) {}
 
-function rewriteContent(content, baseUrl) {
-  const timestamp = Date.now();
-
-  content = content.replace(/(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi, (m, attr, url) => {
-    if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
-    try { return `${attr}="/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}&_t=${timestamp}"`; } catch { return m; }
-  });
-
-  content = content.replace(/url\(["']?([^"')]+)["']?\)/gi, (m, url) => {
-    if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
-    try { return `url('/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}&_t=${timestamp}')`; } catch { return m; }
-  });
-
-  content = content.replace(/@import\s+["']([^"']+)["']/gi, (m, url) => {
-    if (!url || url.startsWith('/api/proxy')) return m;
-    try { return `@import "/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}&_t=${timestamp}"`; } catch { return m; }
-  });
-
-  content = content.replace(/(window\.location|window\.top\.location|document\.location|location\.href)\s*=\s*["']([^"']+)["']/gi, (m, obj, url) => {
-    try { if(!url.startsWith('http')) url = new URL(url, baseUrl).toString(); return `${obj}='/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}'`; } catch { return m; }
-  });
-
-  content = content.replace(/window\.open\s*\(\s*["']([^"']+)["']/gi, (m, url) => {
-    try { if(!url.startsWith('http')) url = new URL(url, baseUrl).toString(); return `window.open('/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}'`; } catch { return m; }
-  });
-
-  content = content.replace(/onclick\s*=\s*["'][^"']*location\.href\s*=\s*['"]([^'"]+)['"][^"']*["']/gi, (m, url) => {
-    try { if(!url.startsWith('http')) url = new URL(url, baseUrl).toString(); return m.replace(url, `/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}`); } catch { return m; }
-  });
-
-  return content;
-}
-
 function rewriteHTML(html, baseUrl) {
-  html = rewriteContent(html, baseUrl);
+  html = html.replace(/(src|srcset|poster)=["']([^"']+)["']/gi, (m, attr, url) => {
+    if(!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
+    try { return `${attr}="/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}"`; } catch { return m; }
+  });
+
+  html = html.replace(/url\(["']?([^"')]+)["']?\)/gi, (m, url) => {
+    if(!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
+    try { return `url('/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}')`; } catch { return m; }
+  });
+
+  html = html.replace(/(--background-image\s*:\s*url\(["']?)([^"')]+)(["']?\))/gi, (m, prefix, url, suffix) => {
+    if(!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
+    try { return `${prefix}/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}${suffix}`; } catch { return m; }
+  });
 
   const hostname = baseUrl.hostname.toLowerCase();
   if(hostname.includes('google.com')){
@@ -114,7 +94,7 @@ export default async function handler(req, res) {
     delete headers['x-frame-options'];
     for(const [key,value] of Object.entries(headers)) res.setHeader(key,value);
 
-    if(isImage||isBinary){
+    if(isImage || isBinary){
       const buffer = Buffer.from(response.data);
       res.setHeader('Content-Length', buffer.length);
       return res.status(response.status).send(buffer);

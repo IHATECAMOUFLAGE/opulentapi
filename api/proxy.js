@@ -8,47 +8,31 @@ try {
   injectJS = fs.readFileSync(path.join(process.cwd(), 'lib/rewriter/inject.js'), 'utf8');
 } catch (e) {}
 
-function decodeBrave(url) {
-  if (!url.startsWith("https://imgs.search.brave.com/")) return url;
+function getProxiedUrl(url) {
   try {
-    const parts = url.split("/");
-    const b64 = parts[parts.length - 1];
-    const decoded = Buffer.from(b64, "base64").toString("utf8");
-    if (decoded.startsWith("http")) return decoded;
+    const decoded = decodeURIComponent(url);
+    if (decoded.includes('/api/proxy?url=')) return url;
   } catch {}
-  return url;
-}
-
-function isImage(url) {
-  return /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff)$/i.test(url);
+  return '/api/proxy?url=' + encodeURIComponent(url);
 }
 
 function rewriteContent(content, baseUrl) {
   content = content.replace(/(src|srcset|data-src|poster|href|action|formaction)=["']([^"']+)["']/gi, (m, attr, link) => {
     if (!link || link.startsWith('data:') || link.startsWith('mailto:') || link.startsWith('javascript:')) return m;
     let absolute = new URL(link, baseUrl).toString();
-    absolute = decodeBrave(absolute);
-    return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
+    return `${attr}="${getProxiedUrl(absolute)}"`;
   });
 
   content = content.replace(/url\(["']?([^"')]+)["']?\)/gi, (m, url) => {
     if (url.startsWith('data:')) return m;
     let absolute = new URL(url, baseUrl).toString();
-    absolute = decodeBrave(absolute);
-    return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
-  });
-
-  content = content.replace(/(["'])(\/?[^"']+\.(?:png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff))\1/gi, (full, q, link) => {
-    let absolute = new URL(link, baseUrl).toString();
-    absolute = decodeBrave(absolute);
-    return `"${'/api/proxy?url=' + encodeURIComponent(absolute)}"`;
+    return `url('${getProxiedUrl(absolute)}')`;
   });
 
   content = content.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, (m, js) => {
     const rewritten = js.replace(/(["'])(\/?[^"']+\.(?:png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff))\1/gi, (full, q, link) => {
       let absolute = new URL(link, baseUrl).toString();
-      absolute = decodeBrave(absolute);
-      return `"${'/api/proxy?url=' + encodeURIComponent(absolute)}"`;
+      return `"${getProxiedUrl(absolute)}"`;
     });
     return m.replace(js, rewritten);
   });
@@ -57,8 +41,7 @@ function rewriteContent(content, baseUrl) {
     const rewritten = css.replace(/url\(["']?([^"')]+)["']?\)/gi, (match, url) => {
       if (url.startsWith('data:')) return match;
       let absolute = new URL(url, baseUrl).toString();
-      absolute = decodeBrave(absolute);
-      return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
+      return `url('${getProxiedUrl(absolute)}')`;
     });
     return m.replace(css, rewritten);
   });

@@ -50,7 +50,9 @@ function rewriteHTML(html, baseUrl) {
               if(e.key === 'Enter'){
                 e.preventDefault();
                 const q = input.value;
-                if(q) window.location.href = '/api/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + q);
+                if(q) 
+                alert('Proxy WILL redirect more than once when loading content! May take time!');
+                window.location.href = '/api/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + q);
               }
             });
           }

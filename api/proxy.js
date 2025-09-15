@@ -73,6 +73,8 @@ export default async function handler(req, res) {
   let targetUrl = req.query.raw || req.query.url;
   if (!targetUrl) return res.status(400).send("Missing `url` or `raw` query parameter.");
 
+  const isRaw = !!req.query.raw;
+
   try {
     targetUrl = decodeURIComponent(targetUrl);
   } catch {
@@ -102,10 +104,21 @@ export default async function handler(req, res) {
     delete headers['x-frame-options'];
     for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
 
+    let data = response.data;
+
+    if (isRaw) {
+      const escaped = data
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      return res.status(response.status).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Raw HTML</title><style>body{background:#111;color:#0f0;font-family:monospace;padding:20px;white-space:pre-wrap;}</style></head><body><pre>${escaped}</pre></body></html>`);
+    }
+
     if (isBinary) return res.status(response.status).send(Buffer.from(response.data));
     if (isJson) return res.status(response.status).json(response.data);
 
-    let data = response.data;
     if (!isJs && contentType.includes('text/html')) {
       const baseUrl = new URL(targetUrl);
       data = rewriteHTML(data, baseUrl);

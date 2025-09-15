@@ -8,43 +8,73 @@ try {
   injectJS = fs.readFileSync(path.join(process.cwd(), 'lib/rewriter/inject.js'), 'utf8');
 } catch (e) {}
 
+function rewriteContent(content, baseUrl) {
+  const timestamp = Date.now();
+
+  content = content.replace(/(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi, (m, attr, url) => {
+    if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
+    try {
+      const absolute = new URL(url, baseUrl).toString();
+      return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}&_t=${timestamp}"`;
+    } catch { return m; }
+  });
+
+  content = content.replace(/url\(["']?([^"')]+)["']?\)/gi, (m, url) => {
+    if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
+    try {
+      const absolute = new URL(url, baseUrl).toString();
+      return `url('/api/proxy?url=${encodeURIComponent(absolute)}&_t=${timestamp}')`;
+    } catch { return m; }
+  });
+
+  content = content.replace(/@import\s+["']([^"']+)["']/gi, (m, url) => {
+    if (!url || url.startsWith('/api/proxy')) return m;
+    try {
+      const absolute = new URL(url, baseUrl).toString();
+      return `@import "/api/proxy?url=${encodeURIComponent(absolute)}&_t=${timestamp}"`;
+    } catch { return m; }
+  });
+
+  content = content.replace(/(window\.location|window\.top\.location|document\.location|location\.href)\s*=\s*["']([^"']+)["']/gi, (m, obj, url) => {
+    if (!url.startsWith('http')) {
+      try { url = new URL(url, baseUrl).toString(); } catch { return m; }
+    }
+    return `${obj}='/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}'`;
+  });
+
+  content = content.replace(/window\.open\s*\(\s*["']([^"']+)["']/gi, (m, url) => {
+    if (!url.startsWith('http')) {
+      try { url = new URL(url, baseUrl).toString(); } catch { return m; }
+    }
+    return `window.open('/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}'`;
+  });
+
+  content = content.replace(/onclick\s*=\s*["'][^"']*location\.href\s*=\s*['"]([^'"]+)['"][^"']*["']/gi, (m, url) => {
+    if (!url.startsWith('http')) {
+      try { url = new URL(url, baseUrl).toString(); } catch { return m; }
+    }
+    return m.replace(url, `/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}`);
+  });
+
+  return content;
+}
+
 function rewriteHTML(html, baseUrl) {
-  html = html.replace(/(src|srcset|poster)=["']([^"']+)["']/gi, (m, attr, url) => {
-    if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
-    try {
-      const absolute = new URL(url, baseUrl).toString();
-      return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
-    } catch { return m; }
-  });
-
-  html = html.replace(/url\(["']?([^"')]+)["']?\)/gi, (m, url) => {
-    if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
-    try {
-      const absolute = new URL(url, baseUrl).toString();
-      return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
-    } catch { return m; }
-  });
-
-  html = html.replace(/(--background-image\s*:\s*url\(["']?)([^"')]+)(["']?\))/gi, (m, prefix, url, suffix) => {
-    if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
-    try {
-      const absolute = new URL(url, baseUrl).toString();
-      return `${prefix}/api/proxy?url=${encodeURIComponent(absolute)}${suffix}`;
-    } catch { return m; }
-  });
+  html = rewriteContent(html, baseUrl);
 
   const hostname = baseUrl.hostname.toLowerCase();
   if (hostname.includes('google.com')) {
     html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, (match, inner) => {
       inner = inner.replace(/<textarea[^>]*id="APjFqb"[^>]*>.*?<\/textarea>/i, `
         <input id="customSearch" type="text" placeholder="Search Google"
-          style="width:100%; height:100%; background:transparent; border:none; outline:none; color:black; font-family:Roboto,Arial,sans-serif; font-size:16px; padding:0; margin:0;">
+          style="width:100%;height:100%;background:transparent;border:none;outline:none;color:black;font-family:Roboto,Arial,sans-serif;font-size:16px;padding:0;margin:0;">
       `);
-      return `<div style="width:100%; height:100%; position:relative;">${inner}</div>`;
+      return `<div style="width:100%;height:100%;position:relative;">${inner}</div>`;
     });
+
     html = html.replace(/<\/body>/i, `
       <script>
-        window.addEventListener('DOMContentLoaded', function() {
+        window.addEventListener('DOMContentLoaded', function(){
           const input = document.querySelector('#customSearch');
           if(input){
             input.addEventListener('keydown', function(e){
@@ -76,20 +106,19 @@ export default async function handler(req, res) {
   if(!targetUrl) return res.status(400).send("Missing `url` or `raw` query parameter.");
   const isRaw = !!req.query.raw;
 
-  try {
-    targetUrl = decodeURIComponent(targetUrl);
-  } catch { return res.status(400).send("Invalid URL encoding."); }
+  try { targetUrl = decodeURIComponent(targetUrl); } catch { return res.status(400).send("Invalid URL encoding."); }
 
   try {
     const agent = new https.Agent({rejectUnauthorized:false});
     const isImage = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff)$/i.test(targetUrl);
     const isBinary = /\.(woff2?|ttf|eot|otf)$/i.test(targetUrl);
+    const isCss = /\.css$/i.test(targetUrl);
     const isJs = /\.js$/i.test(targetUrl);
     const isJson = /\.json$/i.test(targetUrl);
 
     const response = await axios.get(targetUrl, {
       httpsAgent: agent,
-      responseType: isImage || isBinary ? 'arraybuffer' : 'text',
+      responseType: isImage || isBinary || isCss ? 'arraybuffer' : 'text',
       timeout:20000,
       headers:{'User-Agent':req.headers['user-agent']||'','Accept':'*/*'}
     });
@@ -110,9 +139,16 @@ export default async function handler(req, res) {
       return res.status(response.status).send(buffer);
     }
 
-    if(isJson) return res.status(response.status).json(response.data);
-
     let data = response.data;
+
+    if(isCss) {
+      data = data.toString('utf8');
+      data = rewriteContent(data, new URL(targetUrl));
+      res.setHeader('Content-Type','text/css');
+      return res.status(response.status).send(data);
+    }
+
+    if(isJson) return res.status(response.status).json(response.data);
 
     if(isRaw){
       const escaped = data.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');

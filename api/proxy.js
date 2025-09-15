@@ -9,30 +9,28 @@ try {
 } catch (e) {}
 
 function rewriteHTML(html, baseUrl) {
-  // Rewrite all images: <img>, <source>, <picture>, poster attributes
-  html = html.replace(/<(img|source|video)[^>]+?(src|srcset|poster)=["']([^"']+)["']/gi, (match, tag, attr, url) => {
-    if (!url || url.startsWith('data:') || url.startsWith('javascript:')) return match;
+  html = html.replace(/(src|srcset|poster)=["']([^"']+)["']/gi, (m, attr, url) => {
+    if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
     try {
       const absolute = new URL(url, baseUrl).toString();
-      return match.replace(url, `/api/proxy?url=${encodeURIComponent(absolute)}`);
-    } catch { return match; }
+      return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
+    } catch { return m; }
   });
 
-  // Rewrite all CSS background-images and inline styles
-  html = html.replace(/url\(["']?([^"')]+)["']?\)/gi, (match, url) => {
-    if (!url || url.startsWith('data:') || url.startsWith('javascript:')) return match;
+  html = html.replace(/url\(["']?([^"')]+)["']?\)/gi, (m, url) => {
+    if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
     try {
       const absolute = new URL(url, baseUrl).toString();
       return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
-    } catch { return match; }
+    } catch { return m; }
   });
 
-  html = html.replace(/(--background-image\s*:\s*url\(["']?)([^"')]+)(["']?\))/gi, (match, prefix, url, suffix) => {
-    if (!url || url.startsWith('data:') || url.startsWith('javascript:')) return match;
+  html = html.replace(/(--background-image\s*:\s*url\(["']?)([^"')]+)(["']?\))/gi, (m, prefix, url, suffix) => {
+    if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
     try {
       const absolute = new URL(url, baseUrl).toString();
       return `${prefix}/api/proxy?url=${encodeURIComponent(absolute)}${suffix}`;
-    } catch { return match; }
+    } catch { return m; }
   });
 
   const hostname = baseUrl.hostname.toLowerCase();
@@ -76,7 +74,6 @@ export default async function handler(req, res) {
 
   let targetUrl = req.query.raw || req.query.url;
   if(!targetUrl) return res.status(400).send("Missing `url` or `raw` query parameter.");
-
   const isRaw = !!req.query.raw;
 
   try {
@@ -107,7 +104,12 @@ export default async function handler(req, res) {
     delete headers['x-frame-options'];
     for(const [key,value] of Object.entries(headers)) res.setHeader(key,value);
 
-    if(isImage || isBinary) return res.status(response.status).send(Buffer.from(response.data));
+    if(isImage || isBinary) {
+      const buffer = Buffer.from(response.data);
+      res.setHeader('Content-Length', buffer.length);
+      return res.status(response.status).send(buffer);
+    }
+
     if(isJson) return res.status(response.status).json(response.data);
 
     let data = response.data;

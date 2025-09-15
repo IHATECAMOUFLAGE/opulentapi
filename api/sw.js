@@ -7,15 +7,21 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS)));
   self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {
   event.waitUntil(clients.claim());
 });
+
+function getProxiedUrl(url) {
+  try {
+    const decoded = decodeURIComponent(url);
+    if (decoded.includes('/api/proxy?url=')) return url;
+  } catch {}
+  return '/api/proxy?url=' + encodeURIComponent(url);
+}
 
 self.addEventListener('fetch', event => {
   const { request } = event;
@@ -29,7 +35,7 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') {
     event.respondWith((async () => {
       try {
-        return fetch('/api/proxy?url=' + encodeURIComponent(request.url), {
+        return fetch(getProxiedUrl(request.url), {
           method: request.method,
           headers: request.headers,
           body: request.method === 'POST' ? await request.clone().text() : undefined,
@@ -46,14 +52,14 @@ self.addEventListener('fetch', event => {
   const isImage = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff)$/i.test(url.pathname);
 
   if (isImage) {
-    event.respondWith(fetch('/api/proxy?url=' + encodeURIComponent(request.url)));
+    event.respondWith(fetch(getProxiedUrl(request.url)));
     return;
   }
 
   if (!isStatic) {
     event.respondWith((async () => {
       try {
-        return fetch('/api/proxy?url=' + encodeURIComponent(request.url));
+        return fetch(getProxiedUrl(request.url));
       } catch (err) {
         return new Response('Proxy fetch failed: ' + err.message, { status: 500 });
       }
@@ -61,12 +67,6 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then(cached => cached || fetch(request).then(response => {
-      if (!response || response.status !== 200 || response.type !== 'basic') return response;
-      const responseClone = response.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put(request, responseClone));
-      return response;
-    }))
-  );
-});
+  event.respondWith(caches.match(request).then(cached => cached || fetch(request).then(response => {
+    if (!response || response.status !== 200 || response.type !== 'basic') return response;
+   

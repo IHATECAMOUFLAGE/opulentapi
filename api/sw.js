@@ -1,73 +1,68 @@
-const proxyBase = self.registration.scope + 'api/proxy?url=';
+const CACHE_NAME = 'proxy-site-cache-v1';
+const STATIC_ASSETS = [
+  '/',
+  '/index.html',
+  '/lib/rewriter/inject.js',
+  '/styles.css',
+];
 
-function proxify(url) {
-  try {
-    if (url.startsWith(proxyBase)) return url;
-    if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('javascript:') || url.startsWith('mailto:')) return url;
-    const absolute = new URL(url, location.href).toString();
-    return proxyBase + encodeURIComponent(absolute);
-  } catch (e) {
-    return url;
-  }
-}
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
+  );
+  self.skipWaiting();
+});
 
-self.addEventListener('install', event => self.skipWaiting());
-self.addEventListener('activate', event => event.waitUntil(clients.claim()));
+self.addEventListener('activate', event => {
+  event.waitUntil(clients.claim());
+});
 
 self.addEventListener('fetch', event => {
-  const request = event.request;
+  const { request } = event;
+  const url = new URL(request.url);
 
-  if (request.method === 'GET') {
-    const proxiedUrl = proxify(request.url);
-    event.respondWith(caches.open('proxy-cache-v1').then(async cache => {
+  if (request.method !== 'GET') {
+    event.respondWith((async () => {
       try {
-        const cached = await cache.match(proxiedUrl);
-        if (cached) return cached;
-        const response = await fetch(proxiedUrl, { headers: { 'X-Proxy': 'true' } });
-        if (response.ok && response.type === 'basic') cache.put(proxiedUrl, response.clone());
-        return response;
-      } catch (e) {
-        return new Response('Proxy fetch failed: ' + e.message, { status: 502 });
+        return fetch('/api/proxy?url=' + encodeURIComponent(request.url), {
+          method: request.method,
+          headers: request.headers,
+          body: request.method === 'POST' ? await request.clone().text() : undefined,
+          redirect: 'follow'
+        });
+      } catch (err) {
+        return new Response('Proxy fetch failed: ' + err.message, { status: 500 });
       }
-    }));
+    })());
     return;
   }
 
-  if (request.method === 'POST') {
+  if (!STATIC_ASSETS.includes(url.pathname) && !url.pathname.startsWith('/api/proxy')) {
     event.respondWith((async () => {
       try {
-        const contentType = request.headers.get('Content-Type') || '';
-        let body;
-
-        if (contentType.includes('application/json')) {
-          body = await request.clone().json();
-          body = JSON.stringify(body);
-        } else {
-          const formData = await request.clone().formData();
-          const params = new URLSearchParams();
-          for (const [key, value] of formData) params.append(key, value);
-          body = params.toString();
-        }
-
-        const proxiedUrl = proxify(request.url);
-
-        const response = await fetch(proxiedUrl, {
-          method: 'POST',
-          body,
-          headers: { 'Content-Type': contentType || 'application/x-www-form-urlencoded', 'X-Proxy': 'true' },
-          redirect: 'manual'
+        return fetch('/api/proxy?url=' + encodeURIComponent(request.url), {
+          method: 'GET',
+          headers: request.headers,
+          redirect: 'follow'
         });
-
-        if (response.status >= 300 && response.status < 400 && response.headers.get('Location')) {
-          const location = response.headers.get('Location');
-          const proxiedLocation = proxify(location);
-          return Response.redirect(proxiedLocation, 302);
-        }
-
-        return response;
-      } catch (e) {
-        return new Response('Proxy POST failed: ' + e.message, { status: 502 });
+      } catch (err) {
+        return new Response('Proxy fetch failed: ' + err.message, { status: 500 });
       }
     })());
+    return;
   }
+
+  event.respondWith(
+    caches.match(request).then(cached => {
+      if (cached) return cached;
+      return fetch(request).then(response => {
+        if (!response || response.status !== 200 || response.type !== 'basic') return response;
+        const responseClone = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(request, responseClone));
+        return response;
+      }).catch(() => {
+        if (request.destination === 'image') return new Response('', { status: 404 });
+      });
+    })
+  );
 });

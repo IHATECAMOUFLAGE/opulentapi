@@ -6,81 +6,64 @@ import path from 'path';
 let injectJS = '';
 try {
   injectJS = fs.readFileSync(path.join(process.cwd(), 'lib/rewriter/inject.js'), 'utf8');
-} catch (e) {}
+} catch {}
 
 function rewriteHTML(html, baseUrl) {
   html = html.replace(/(src|srcset|poster)=["']([^"']+)["']/gi, (m, attr, url) => {
     if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
     try {
-      return `${attr}="/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}"`;
+      const absolute = new URL(url, baseUrl).toString();
+      return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
     } catch { return m; }
   });
 
   html = html.replace(/url\(["']?([^"')]+)["']?\)/gi, (m, url) => {
     if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
     try {
-      return `url('/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}')`;
+      const absolute = new URL(url, baseUrl).toString();
+      return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
     } catch { return m; }
   });
 
   html = html.replace(/(--background-image\s*:\s*url\(["']?)([^"')]+)(["']?\))/gi, (m, prefix, url, suffix) => {
     if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
     try {
-      return `${prefix}/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}${suffix}`;
+      const absolute = new URL(url, baseUrl).toString();
+      return `${prefix}/api/proxy?url=${encodeURIComponent(absolute)}${suffix}`;
     } catch { return m; }
   });
 
-  html = html.replace(/<(a|link|area)\s+([^>]*href=["']([^"']+)["'][^>]*)>/gi, (m, tag, inner, href) => {
+  html = html.replace(/<a\s+[^>]*href=["']([^"']+)["']/gi, (m, href) => {
     if (!href || href.startsWith('javascript:') || href.startsWith('data:') || href.startsWith('/api/proxy')) return m;
     try {
       const absolute = new URL(href, baseUrl).toString();
-      return `<${tag} ${inner.replace(href, `/api/proxy?url=${encodeURIComponent(absolute)}`)}>`;
+      return m.replace(href, `/api/proxy?url=${encodeURIComponent(absolute)}`);
     } catch { return m; }
   });
 
-  html = html.replace(/window\.open\s*\(\s*["']([^"']+)["']([^)]*)\)/gi, (m, url, rest) => {
-    if (!url) return m;
-    try { return `window.open('/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}'${rest})`; } catch { return m; }
-  });
-
-  html = html.replace(/(window|top|document)\.location(\.href)?\s*=\s*["']([^"']+)["']/gi, (m, w, href, url) => {
-    if (!url) return m;
-    try { return `${w}.location.href='/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}'`; } catch { return m; }
-  });
-
-  html = html.replace(/<button\s+([^>]*onclick=["'][^"']*location\.href\s*=\s*["']([^"']+)["'][^"']*["'][^>]*)>/gi, (m, inner, url) => {
-    if (!url) return m;
-    try { return `<button ${inner.replace(url, `/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}`)}>`; } catch { return m; }
-  });
-
-  const hostname = baseUrl.hostname.toLowerCase();
-  if (hostname.includes('google.com')) {
-    html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, (match, inner) => {
-      inner = inner.replace(/<textarea[^>]*id="APjFqb"[^>]*>.*?<\/textarea>/i, `
-        <input id="customSearch" type="text" placeholder="Search Google"
-          style="width:100%; height:100%; background:transparent; border:none; outline:none; color:black; font-family:Roboto,Arial,sans-serif; font-size:16px; padding:0; margin:0;">
-      `);
-      return `<div style="width:100%; height:100%; position:relative;">${inner}</div>`;
+  html = html.replace(/<form\s+([^>]*action=["'][^"']+["'][^>]*)>/gi, (m) => {
+    return m.replace(/action=["']([^"']+)["']/i, (am, action) => {
+      if (!action || action.startsWith('javascript:') || action.startsWith('/api/proxy')) return am;
+      try {
+        const absolute = new URL(action, baseUrl).toString();
+        return `action="/api/proxy?url=${encodeURIComponent(absolute)}"`;
+      } catch { return am; }
     });
+  });
 
-    html = html.replace(/<\/body>/i, `
-      <script>
-        window.addEventListener('DOMContentLoaded', function() {
-          const input = document.querySelector('#customSearch');
-          if(input){
-            input.addEventListener('keydown', function(e){
-              if(e.key==='Enter'){
-                e.preventDefault();
-                const q=input.value;
-                if(q) alert('Proxy may redirect multiple times while loading.');
-                window.location.href='/api/proxy?url='+encodeURIComponent('https://www.google.com/search?q='+q);
-              }
-            });
-          }
-        });
-      </script>
-    </body>`);
-  }
+  html = html.replace(/(window|top|document)\.location(\.href)?\s*=\s*['"]([^'"]+)['"]/gi, (m, w, h, url) => {
+    try {
+      const absolute = new URL(url, baseUrl).toString();
+      return `${w}.location.href='/api/proxy?url=${encodeURIComponent(absolute)}'`;
+    } catch { return m; }
+  });
+
+  html = html.replace(/window\.open\s*\(\s*['"]([^'"]+)['"]/gi, (m, url) => {
+    try {
+      const absolute = new URL(url, baseUrl).toString();
+      return `window.open('/api/proxy?url=${encodeURIComponent(absolute)}'`;
+    } catch { return m; }
+  });
 
   return html;
 }
@@ -97,11 +80,12 @@ export default async function handler(req, res) {
   if (!targetUrl) return res.status(400).send("Missing `url` or `raw` query parameter.");
   const isRaw = !!req.query.raw;
 
-  try { targetUrl = decodeURIComponent(targetUrl); } catch { return res.status(400).send("Invalid URL encoding."); }
+  try { targetUrl = decodeURIComponent(targetUrl); } 
+  catch { return res.status(400).send("Invalid URL encoding."); }
 
   try {
     const agent = new https.Agent({ rejectUnauthorized: false });
-    const isImage = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff)$/i.test(targetUrl) || targetUrl.startsWith('data:image/');
+    const isImage = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff)$/i.test(targetUrl);
     const isBinary = /\.(woff2?|ttf|eot|otf)$/i.test(targetUrl);
     const isJs = /\.js$/i.test(targetUrl);
     const isJson = /\.json$/i.test(targetUrl);
@@ -124,9 +108,9 @@ export default async function handler(req, res) {
     for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
 
     if (isImage || isBinary) {
-      const buffer = targetUrl.startsWith('data:') ? Buffer.from(targetUrl.split(',')[1], 'base64') : Buffer.from(response.data);
+      const buffer = Buffer.from(response.data);
       res.setHeader('Content-Length', buffer.length);
-      return res.status(200).send(buffer);
+      return res.status(response.status).send(buffer);
     }
 
     if (isJson) return res.status(response.status).json(response.data);
@@ -134,7 +118,7 @@ export default async function handler(req, res) {
     let data = response.data;
 
     if (isRaw) {
-      const escaped = data.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      const escaped = data.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
       return res.status(response.status).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Raw HTML</title><style>body{background:#111;color:#0f0;font-family:monospace;padding:20px;white-space:pre-wrap;}</style></head><body><pre>${escaped}</pre></body></html>`);
     }
 
@@ -145,7 +129,6 @@ export default async function handler(req, res) {
     }
 
     return res.status(response.status).send(data);
-
   } catch (e) {
     return res.status(500).send("Fetch error: " + e.message);
   }

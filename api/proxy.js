@@ -13,47 +13,29 @@ function rewriteContent(content, baseUrl) {
 
   content = content.replace(/(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi, (m, attr, url) => {
     if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
-    try {
-      const absolute = new URL(url, baseUrl).toString();
-      return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}&_t=${timestamp}"`;
-    } catch { return m; }
+    try { return `${attr}="/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}&_t=${timestamp}"`; } catch { return m; }
   });
 
   content = content.replace(/url\(["']?([^"')]+)["']?\)/gi, (m, url) => {
     if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
-    try {
-      const absolute = new URL(url, baseUrl).toString();
-      return `url('/api/proxy?url=${encodeURIComponent(absolute)}&_t=${timestamp}')`;
-    } catch { return m; }
+    try { return `url('/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}&_t=${timestamp}')`; } catch { return m; }
   });
 
   content = content.replace(/@import\s+["']([^"']+)["']/gi, (m, url) => {
     if (!url || url.startsWith('/api/proxy')) return m;
-    try {
-      const absolute = new URL(url, baseUrl).toString();
-      return `@import "/api/proxy?url=${encodeURIComponent(absolute)}&_t=${timestamp}"`;
-    } catch { return m; }
+    try { return `@import "/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}&_t=${timestamp}"`; } catch { return m; }
   });
 
   content = content.replace(/(window\.location|window\.top\.location|document\.location|location\.href)\s*=\s*["']([^"']+)["']/gi, (m, obj, url) => {
-    if (!url.startsWith('http')) {
-      try { url = new URL(url, baseUrl).toString(); } catch { return m; }
-    }
-    return `${obj}='/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}'`;
+    try { if(!url.startsWith('http')) url = new URL(url, baseUrl).toString(); return `${obj}='/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}'`; } catch { return m; }
   });
 
   content = content.replace(/window\.open\s*\(\s*["']([^"']+)["']/gi, (m, url) => {
-    if (!url.startsWith('http')) {
-      try { url = new URL(url, baseUrl).toString(); } catch { return m; }
-    }
-    return `window.open('/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}'`;
+    try { if(!url.startsWith('http')) url = new URL(url, baseUrl).toString(); return `window.open('/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}'`; } catch { return m; }
   });
 
   content = content.replace(/onclick\s*=\s*["'][^"']*location\.href\s*=\s*['"]([^'"]+)['"][^"']*["']/gi, (m, url) => {
-    if (!url.startsWith('http')) {
-      try { url = new URL(url, baseUrl).toString(); } catch { return m; }
-    }
-    return m.replace(url, `/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}`);
+    try { if(!url.startsWith('http')) url = new URL(url, baseUrl).toString(); return m.replace(url, `/api/proxy?url=${encodeURIComponent(url)}&_t=${timestamp}`); } catch { return m; }
   });
 
   return content;
@@ -61,8 +43,8 @@ function rewriteContent(content, baseUrl) {
 
 function rewriteHTML(html, baseUrl) {
   html = rewriteContent(html, baseUrl);
-
   const hostname = baseUrl.hostname.toLowerCase();
+
   if (hostname.includes('google.com')) {
     html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, (match, inner) => {
       inner = inner.replace(/<textarea[^>]*id="APjFqb"[^>]*>.*?<\/textarea>/i, `
@@ -95,7 +77,7 @@ function rewriteHTML(html, baseUrl) {
 }
 
 export default async function handler(req, res) {
-  if (req.method==='OPTIONS') {
+  if(req.method==='OPTIONS'){
     res.setHeader("Access-Control-Allow-Origin","*");
     res.setHeader("Access-Control-Allow-Methods","GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers","Content-Type, User-Agent, Referer");
@@ -116,9 +98,9 @@ export default async function handler(req, res) {
     const isJs = /\.js$/i.test(targetUrl);
     const isJson = /\.json$/i.test(targetUrl);
 
-    const response = await axios.get(targetUrl, {
-      httpsAgent: agent,
-      responseType: isImage || isBinary || isCss ? 'arraybuffer' : 'text',
+    const response = await axios.get(targetUrl,{
+      httpsAgent:agent,
+      responseType:isImage||isBinary||isCss?'arraybuffer':'text',
       timeout:20000,
       headers:{'User-Agent':req.headers['user-agent']||'','Accept':'*/*'}
     });
@@ -133,22 +115,22 @@ export default async function handler(req, res) {
     delete headers['x-frame-options'];
     for(const [key,value] of Object.entries(headers)) res.setHeader(key,value);
 
-    if(isImage || isBinary) {
-      const buffer = Buffer.from(response.data);
-      res.setHeader('Content-Length', buffer.length);
+    let data = response.data;
+
+    if(isImage || isBinary){
+      const buffer = Buffer.from(data);
+      res.setHeader('Content-Length',buffer.length);
       return res.status(response.status).send(buffer);
     }
 
-    let data = response.data;
-
-    if(isCss) {
+    if(isCss){
       data = data.toString('utf8');
-      data = rewriteContent(data, new URL(targetUrl));
+      data = rewriteContent(data,new URL(targetUrl));
       res.setHeader('Content-Type','text/css');
       return res.status(response.status).send(data);
     }
 
-    if(isJson) return res.status(response.status).json(response.data);
+    if(isJson) return res.status(response.status).json(data);
 
     if(isRaw){
       const escaped = data.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -157,8 +139,8 @@ export default async function handler(req, res) {
 
     if(!isJs && contentType.includes('text/html')){
       const baseUrl = new URL(targetUrl);
-      data = rewriteHTML(data, baseUrl);
-      if(injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
+      data = rewriteHTML(data,baseUrl);
+      if(injectJS) data = data.replace(/<\/head>/i,`<script>${injectJS}</script></head>`);
     }
 
     return res.status(response.status).send(data);

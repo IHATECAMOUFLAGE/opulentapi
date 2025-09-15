@@ -8,45 +8,60 @@ try {
   injectJS = fs.readFileSync(path.join(process.cwd(), 'lib/rewriter/inject.js'), 'utf8');
 } catch (e) {}
 
-function getProxiedUrl(url) {
-  try {
-    const decoded = decodeURIComponent(url);
-    if (decoded.includes('/api/proxy?url=')) return url;
-  } catch {}
-  return '/api/proxy?url=' + encodeURIComponent(url);
-}
-
-function rewriteContent(content, baseUrl) {
-  content = content.replace(/(src|srcset|data-src|poster|href|action|formaction)=["']([^"']+)["']/gi, (m, attr, link) => {
+function rewriteHTML(html, baseUrl) {
+  html = html.replace(/(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi, (m, attr, link) => {
     if (!link || link.startsWith('data:') || link.startsWith('mailto:') || link.startsWith('javascript:')) return m;
-    let absolute = new URL(link, baseUrl).toString();
-    return `${attr}="${getProxiedUrl(absolute)}"`;
+    const absolute = new URL(link, baseUrl).toString();
+    return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
   });
 
-  content = content.replace(/url\(["']?([^"')]+)["']?\)/gi, (m, url) => {
-    if (url.startsWith('data:')) return m;
-    let absolute = new URL(url, baseUrl).toString();
-    return `url('${getProxiedUrl(absolute)}')`;
+  html = html.replace(/url\(["']?([^"')]+)["']?\)/gi, (m, relativePath) => {
+    if (relativePath.startsWith('data:')) return m;
+    const absolute = new URL(relativePath, baseUrl).toString();
+    return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
   });
 
-  content = content.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, (m, js) => {
-    const rewritten = js.replace(/(["'])(\/?[^"']+\.(?:png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff))\1/gi, (full, q, link) => {
-      let absolute = new URL(link, baseUrl).toString();
-      return `"${getProxiedUrl(absolute)}"`;
+  const hostname = baseUrl.hostname.toLowerCase();
+  if (hostname.includes('google.com')) {
+    html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, (match, inner) => {
+      inner = inner.replace(/<textarea[^>]*id="APjFqb"[^>]*>.*?<\/textarea>/i, `
+        <input id="customSearch" type="text" placeholder="Search Google"
+          style="
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: black;
+            font-family: Roboto, Arial, sans-serif;
+            font-size: 16px;
+            padding: 0;
+            margin: 0;
+          ">
+      `);
+      return `<div style="width:100%; height:100%; position:relative;">${inner}</div>`;
     });
-    return m.replace(js, rewritten);
-  });
 
-  content = content.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (m, css) => {
-    const rewritten = css.replace(/url\(["']?([^"')]+)["']?\)/gi, (match, url) => {
-      if (url.startsWith('data:')) return match;
-      let absolute = new URL(url, baseUrl).toString();
-      return `url('${getProxiedUrl(absolute)}')`;
-    });
-    return m.replace(css, rewritten);
-  });
+    html = html.replace(/<\/body>/i, `
+      <script>
+        window.addEventListener('DOMContentLoaded', function() {
+          const input = document.querySelector('#customSearch');
+          if(input){
+            input.addEventListener('keydown', function(e){
+              if(e.key === 'Enter'){
+                e.preventDefault();
+                const q = input.value;
+                if(q) alert('Proxy WILL redirect more than once when loading content! May take time!');
+                window.location.href = '/api/proxy?url=' + encodeURIComponent('https://www.google.com/search?q=' + q);
+              }
+            });
+          }
+        });
+      </script>
+    </body>`);
+  }
 
-  return content;
+  return html;
 }
 
 export default async function handler(req, res) {
@@ -68,17 +83,16 @@ export default async function handler(req, res) {
     return res.status(400).send("Invalid URL encoding.");
   }
 
-  let response;
   try {
     const agent = new https.Agent({ rejectUnauthorized: false });
-    const isBinary = /\.(png|jpe?g|gif|webp|bmp|svg|woff2?|ttf|eot|otf|ico|avif|tiff)$/i.test(targetUrl);
+    const isImage = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff)$/i.test(targetUrl);
+    const isBinary = /\.(woff2?|ttf|eot|otf)$/i.test(targetUrl);
     const isJs = /\.js$/i.test(targetUrl);
     const isJson = /\.json$/i.test(targetUrl);
-    const isCss = /\.css$/i.test(targetUrl);
 
-    response = await axios.get(targetUrl, {
+    const response = await axios.get(targetUrl, {
       httpsAgent: agent,
-      responseType: isBinary ? 'arraybuffer' : 'text',
+      responseType: isImage || isBinary ? 'arraybuffer' : 'text',
       timeout: 20000,
       headers: { 'User-Agent': req.headers['user-agent'] || '', 'Accept': '*/*' }
     });
@@ -86,6 +100,7 @@ export default async function handler(req, res) {
     const contentType = response.headers['content-type'] || 'application/octet-stream';
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Content-Type", contentType);
+
     const headers = { ...response.headers };
     delete headers['content-security-policy'];
     delete headers['content-security-policy-report-only'];
@@ -104,44 +119,12 @@ export default async function handler(req, res) {
       return res.status(response.status).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Raw HTML</title><style>body{background:#111;color:#0f0;font-family:monospace;padding:20px;white-space:pre-wrap;}</style></head><body><pre>${escaped}</pre></body></html>`);
     }
 
-    if (isBinary) return res.status(response.status).send(Buffer.from(response.data));
+    if (isImage || isBinary) return res.status(response.status).send(Buffer.from(response.data));
     if (isJson) return res.status(response.status).json(response.data);
-
-    if ((isCss || contentType.includes('text/css')) && !isBinary) {
-      const baseUrl = new URL(targetUrl);
-      data = rewriteContent(data, baseUrl);
-    }
 
     if (!isJs && contentType.includes('text/html')) {
       const baseUrl = new URL(targetUrl);
-      data = rewriteContent(data, baseUrl);
-      data = data.replace(/<\/body>/i, `
-        <script>
-          window.addEventListener('DOMContentLoaded', function() {
-            function rewriteDynamicImages() {
-              const imgs = document.querySelectorAll('img');
-              imgs.forEach(img => {
-                if(img.src && !img.src.includes('/api/proxy?url=')) {
-                  try { img.src = '/api/proxy?url=' + encodeURIComponent(new URL(img.src, window.location.href).toString()); } catch{}
-                }
-              });
-              const elements = document.querySelectorAll('*');
-              elements.forEach(el => {
-                const style = getComputedStyle(el);
-                if(!style) return;
-                const bg = style.backgroundImage;
-                if(bg && bg.startsWith('url(') && !bg.includes('/api/proxy?url=')) {
-                  const url = bg.slice(4,-1).replace(/["']/g,'');
-                  try { el.style.backgroundImage = 'url(/api/proxy?url=' + encodeURIComponent(new URL(url, window.location.href).toString()) + ')'; } catch{}
-                }
-              });
-            }
-            rewriteDynamicImages();
-            const observer = new MutationObserver(rewriteDynamicImages);
-            observer.observe(document.body, { childList:true, subtree:true, attributes:true });
-          });
-        </script>
-      </body>`);
+      data = rewriteHTML(data, baseUrl);
       if (injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
     }
 

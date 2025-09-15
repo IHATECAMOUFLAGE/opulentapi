@@ -9,25 +9,21 @@ try {
 } catch (e) {}
 
 function rewriteHTML(html, baseUrl) {
-  html = html.replace(/(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi, (m, attr, link) => {
+  html = html.replace(/(src|srcset|data-src|poster|action|formaction|href)=["']([^"']+)["']/gi, (m, attr, link) => {
     if (!link || link.startsWith('data:') || link.startsWith('mailto:') || link.startsWith('javascript:')) return m;
-    let absolute = new URL(link, baseUrl).toString();
-    if (absolute.startsWith("https://imgs.search.brave.com/")) {
-      try {
-        const parts = absolute.split("/");
-        const b64 = parts[parts.length - 1];
-        const decoded = Buffer.from(b64, "base64").toString("utf8");
-        if (decoded.startsWith("http")) {
-          absolute = decoded;
-        }
-      } catch (e) {}
-    }
+    const absolute = new URL(link, baseUrl).toString();
     return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
   });
 
   html = html.replace(/url\(["']?(?!data:|http|\/\/)([^"')]+)["']?\)/gi, (m, relativePath) => {
     const absolute = new URL(relativePath, baseUrl).toString();
     return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
+  });
+
+  html = html.replace(/(["'])([^"']+\.(?:png|jpe?g|gif|webp|bmp|svg|ico|avif))\1/gi, (m, q, link) => {
+    if (link.startsWith('http') || link.startsWith('//')) return `"${'/api/proxy?url=' + encodeURIComponent(new URL(link, baseUrl).toString())}"`;
+    const absolute = new URL(link, baseUrl).toString();
+    return `"${'/api/proxy?url=' + encodeURIComponent(absolute)}"`;
   });
 
   const hostname = baseUrl.hostname.toLowerCase();
@@ -96,7 +92,7 @@ export default async function handler(req, res) {
   let response;
   try {
     const agent = new https.Agent({ rejectUnauthorized: false });
-    const isBinary = /\.(png|jpe?g|gif|webp|bmp|svg|woff2?|ttf|eot|otf|ico)$/i.test(targetUrl);
+    const isBinary = /\.(png|jpe?g|gif|webp|bmp|svg|woff2?|ttf|eot|otf|ico|avif)$/i.test(targetUrl);
     const isJs = /\.js$/i.test(targetUrl);
     const isJson = /\.json$/i.test(targetUrl);
 

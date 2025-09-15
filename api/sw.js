@@ -21,6 +21,11 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
 
+  if (url.pathname.startsWith('/api/proxy')) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   if (request.method !== 'GET') {
     event.respondWith((async () => {
       try {
@@ -37,14 +42,18 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  if (!STATIC_ASSETS.includes(url.pathname) && !url.pathname.startsWith('/api/proxy')) {
+  const isStatic = STATIC_ASSETS.includes(url.pathname);
+  const isImage = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff)$/i.test(url.pathname);
+
+  if (isImage) {
+    event.respondWith(fetch('/api/proxy?url=' + encodeURIComponent(request.url)));
+    return;
+  }
+
+  if (!isStatic) {
     event.respondWith((async () => {
       try {
-        return fetch('/api/proxy?url=' + encodeURIComponent(request.url), {
-          method: 'GET',
-          headers: request.headers,
-          redirect: 'follow'
-        });
+        return fetch('/api/proxy?url=' + encodeURIComponent(request.url));
       } catch (err) {
         return new Response('Proxy fetch failed: ' + err.message, { status: 500 });
       }
@@ -53,16 +62,11 @@ self.addEventListener('fetch', event => {
   }
 
   event.respondWith(
-    caches.match(request).then(cached => {
-      if (cached) return cached;
-      return fetch(request).then(response => {
-        if (!response || response.status !== 200 || response.type !== 'basic') return response;
-        const responseClone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, responseClone));
-        return response;
-      }).catch(() => {
-        if (request.destination === 'image') return new Response('', { status: 404 });
-      });
-    })
+    caches.match(request).then(cached => cached || fetch(request).then(response => {
+      if (!response || response.status !== 200 || response.type !== 'basic') return response;
+      const responseClone = response.clone();
+      caches.open(CACHE_NAME).then(cache => cache.put(request, responseClone));
+      return response;
+    }))
   );
 });

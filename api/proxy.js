@@ -24,6 +24,29 @@ function rewriteHTML(html, baseUrl) {
     try { return `${prefix}/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}${suffix}`; } catch { return m; }
   });
 
+  html = html.replace(/<(a|link|area)\s+([^>]*href=["']([^"']+)["'][^>]*)>/gi, (m, tag, inner, href) => {
+    if(!href || href.startsWith('javascript:') || href.startsWith('data:') || href.startsWith('/api/proxy')) return m;
+    try {
+      const absolute = new URL(href, baseUrl).toString();
+      return `<${tag} ${inner.replace(href, `/api/proxy?url=${encodeURIComponent(absolute)}`)}>`;
+    } catch { return m; }
+  });
+
+  html = html.replace(/window\.open\s*\(\s*["']([^"']+)["']([^)]*)\)/gi, (m, url, rest) => {
+    if(!url) return m;
+    try { return `window.open('/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}'${rest})`; } catch { return m; }
+  });
+
+  html = html.replace(/(window|top|document)\.location(\.href)?\s*=\s*["']([^"']+)["']/gi, (m, w, href, url) => {
+    if(!url) return m;
+    try { return `${w}.location.href='/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}'`; } catch { return m; }
+  });
+
+  html = html.replace(/<button\s+([^>]*onclick=["'][^"']*location\.href\s*=\s*["']([^"']+)["'][^"']*["'][^>]*)>/gi, (m, inner, url) => {
+    if(!url) return m;
+    try { return `<button ${inner.replace(url, `/api/proxy?url=${encodeURIComponent(new URL(url, baseUrl).toString())}`)}>`; } catch { return m; }
+  });
+
   const hostname = baseUrl.hostname.toLowerCase();
   if(hostname.includes('google.com')){
     html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, (match, inner) => {

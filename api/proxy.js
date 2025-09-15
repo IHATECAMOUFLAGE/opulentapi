@@ -8,22 +8,55 @@ try {
   injectJS = fs.readFileSync(path.join(process.cwd(), 'lib/rewriter/inject.js'), 'utf8');
 } catch (e) {}
 
+function decodeBrave(url) {
+  if (!url.startsWith("https://imgs.search.brave.com/")) return url;
+  try {
+    const parts = url.split("/");
+    const b64 = parts[parts.length - 1];
+    const decoded = Buffer.from(b64, "base64").toString("utf8");
+    if (decoded.startsWith("http")) return decoded;
+  } catch {}
+  return url;
+}
+
+function isImage(url) {
+  return /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff)$/i.test(url);
+}
+
 function rewriteHTML(html, baseUrl) {
-  html = html.replace(/(src|srcset|data-src|poster|action|formaction|href)=["']([^"']+)["']/gi, (m, attr, link) => {
+  html = html.replace(/(src|srcset|data-src|poster|href|action|formaction)=["']([^"']+)["']/gi, (m, attr, link) => {
     if (!link || link.startsWith('data:') || link.startsWith('mailto:') || link.startsWith('javascript:')) return m;
-    const absolute = new URL(link, baseUrl).toString();
-    return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
+    let absolute = new URL(link, baseUrl).toString();
+    absolute = decodeBrave(absolute);
+    if (isImage(absolute)) return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
+    return `${attr}="${absolute}"`;
   });
 
   html = html.replace(/url\(["']?(?!data:|http|\/\/)([^"')]+)["']?\)/gi, (m, relativePath) => {
-    const absolute = new URL(relativePath, baseUrl).toString();
-    return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
+    let absolute = new URL(relativePath, baseUrl).toString();
+    absolute = decodeBrave(absolute);
+    if (isImage(absolute)) return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
+    return `url('${absolute}')`;
   });
 
-  html = html.replace(/(["'])([^"']+\.(?:png|jpe?g|gif|webp|bmp|svg|ico|avif))\1/gi, (m, q, link) => {
-    if (link.startsWith('http') || link.startsWith('//')) return `"${'/api/proxy?url=' + encodeURIComponent(new URL(link, baseUrl).toString())}"`;
-    const absolute = new URL(link, baseUrl).toString();
-    return `"${'/api/proxy?url=' + encodeURIComponent(absolute)}"`;
+  html = html.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, (m, js) => {
+    const rewritten = js.replace(/(["'])(\/?[^"']+\.(?:png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff))\1/gi, (full, q, link) => {
+      let absolute = new URL(link, baseUrl).toString();
+      absolute = decodeBrave(absolute);
+      return `"${'/api/proxy?url=' + encodeURIComponent(absolute)}"`;
+    });
+    return m.replace(js, rewritten);
+  });
+
+  html = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (m, css) => {
+    const rewritten = css.replace(/url\(["']?([^"')]+)["']?\)/gi, (match, url) => {
+      if (url.startsWith('data:')) return match;
+      let absolute = new URL(url, baseUrl).toString();
+      absolute = decodeBrave(absolute);
+      if (isImage(absolute)) return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
+      return `url('${absolute}')`;
+    });
+    return m.replace(css, rewritten);
   });
 
   const hostname = baseUrl.hostname.toLowerCase();
@@ -62,6 +95,36 @@ function rewriteHTML(html, baseUrl) {
               }
             });
           }
+
+          function rewriteDynamicImages() {
+            const imgs = document.querySelectorAll('img');
+            imgs.forEach(img => {
+              if (img.src && !img.src.includes('/api/proxy?url=')) {
+                try { 
+                  const abs = new URL(img.src, window.location.href).toString();
+                  img.src = '/api/proxy?url=' + encodeURIComponent(abs);
+                } catch {}
+              }
+            });
+
+            const elements = document.querySelectorAll('*');
+            elements.forEach(el => {
+              const style = getComputedStyle(el);
+              if (!style) return;
+              const bg = style.backgroundImage;
+              if (bg && bg.startsWith('url(') && !bg.includes('/api/proxy?url=')) {
+                const url = bg.slice(4, -1).replace(/["']/g,'');
+                try { 
+                  const abs = new URL(url, window.location.href).toString();
+                  el.style.backgroundImage = 'url(/api/proxy?url=' + encodeURIComponent(abs) + ')';
+                } catch {}
+              }
+            });
+          }
+
+          rewriteDynamicImages();
+          const observer = new MutationObserver(rewriteDynamicImages);
+          observer.observe(document.body, { childList:true, subtree:true, attributes:true });
         });
       </script>
     </body>`);
@@ -92,9 +155,10 @@ export default async function handler(req, res) {
   let response;
   try {
     const agent = new https.Agent({ rejectUnauthorized: false });
-    const isBinary = /\.(png|jpe?g|gif|webp|bmp|svg|woff2?|ttf|eot|otf|ico|avif)$/i.test(targetUrl);
+    const isBinary = /\.(png|jpe?g|gif|webp|bmp|svg|woff2?|ttf|eot|otf|ico|avif|tiff)$/i.test(targetUrl);
     const isJs = /\.js$/i.test(targetUrl);
     const isJson = /\.json$/i.test(targetUrl);
+    const isCss = /\.css$/i.test(targetUrl);
 
     response = await axios.get(targetUrl, {
       httpsAgent: agent,
@@ -126,6 +190,16 @@ export default async function handler(req, res) {
 
     if (isBinary) return res.status(response.status).send(Buffer.from(response.data));
     if (isJson) return res.status(response.status).json(response.data);
+
+    if ((isCss || contentType.includes('text/css')) && !isBinary) {
+      const baseUrl = new URL(targetUrl);
+      data = data.replace(/url\(["']?([^"')]+)["']?\)/gi, (match, url) => {
+        if (url.startsWith('data:')) return match;
+        let absolute = new URL(url, baseUrl).toString();
+        if (isImage(absolute)) return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
+        return `url('${absolute}')`;
+      });
+    }
 
     if (!isJs && contentType.includes('text/html')) {
       const baseUrl = new URL(targetUrl);

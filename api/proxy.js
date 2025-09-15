@@ -11,7 +11,17 @@ try {
 function rewriteHTML(html, baseUrl) {
   html = html.replace(/(src|href|srcset|poster|action|formaction)=["']([^"']+)["']/gi, (m, attr, link) => {
     if (!link || link.startsWith('data:') || link.startsWith('mailto:') || link.startsWith('javascript:')) return m;
-    const absolute = new URL(link, baseUrl).toString();
+    let absolute = new URL(link, baseUrl).toString();
+    if (absolute.startsWith("https://imgs.search.brave.com/")) {
+      try {
+        const parts = absolute.split("/");
+        const b64 = parts[parts.length - 1];
+        const decoded = Buffer.from(b64, "base64").toString("utf8");
+        if (decoded.startsWith("http")) {
+          absolute = decoded;
+        }
+      } catch (e) {}
+    }
     return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
   });
 

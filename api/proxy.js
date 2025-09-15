@@ -23,8 +23,8 @@ function rewriteHTML(html, baseUrl) {
   const hostname = baseUrl.hostname.toLowerCase();
   if (hostname.includes('google.com')) {
     html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, (match, inner) => {
-      return `<div style="width:100%; height:100%; position:relative;">
-        <input id="customSearch" type="text" placeholder="Search Google" 
+      inner = inner.replace(/<textarea[^>]*id="APjFqb"[^>]*>.*?<\/textarea>/i, `
+        <input id="customSearch" type="text" placeholder="Search Google"
           style="
             width: 100%;
             height: 100%;
@@ -37,13 +37,13 @@ function rewriteHTML(html, baseUrl) {
             padding: 0;
             margin: 0;
           ">
-        ${inner}
-      </div>`;
+      `);
+      return `<div style="width:100%; height:100%; position:relative;">${inner}</div>`;
     });
 
     html = html.replace(/<\/body>/i, `
       <script>
-        window.addEventListener('DOMContentLoaded', function(){
+        window.addEventListener('DOMContentLoaded', function() {
           const input = document.querySelector('#customSearch');
           if(input){
             input.addEventListener('keydown', function(e){

@@ -13,7 +13,7 @@ function rewriteHTML(html, baseUrl, hostDomain) {
     if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
     try {
       const absolute = new URL(url, baseUrl).toString();
-      if(new URL(absolute).hostname === hostDomain) return `${attr}="${absolute}"`;
+      if (new URL(absolute).hostname === hostDomain) return `${attr}="${absolute}"`;
       return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
     } catch { return m; }
   });
@@ -22,7 +22,7 @@ function rewriteHTML(html, baseUrl, hostDomain) {
     if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
     try {
       const absolute = new URL(url, baseUrl).toString();
-      if(new URL(absolute).hostname === hostDomain) return `url('${absolute}')`;
+      if (new URL(absolute).hostname === hostDomain) return `url('${absolute}')`;
       return `url('/api/proxy?url=${encodeURIComponent(absolute)}')`;
     } catch { return m; }
   });
@@ -31,55 +31,29 @@ function rewriteHTML(html, baseUrl, hostDomain) {
     if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
     try {
       const absolute = new URL(url, baseUrl).toString();
-      if(new URL(absolute).hostname === hostDomain) return `${prefix}${absolute}${suffix}`;
+      if (new URL(absolute).hostname === hostDomain) return `${prefix}${absolute}${suffix}`;
       return `${prefix}/api/proxy?url=${encodeURIComponent(absolute)}${suffix}`;
     } catch { return m; }
   });
 
-  const hostname = baseUrl.hostname.toLowerCase();
-  if(hostname.includes('google.com')) {
-    html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, (match, inner) => {
-      inner = inner.replace(/<textarea[^>]*id="APjFqb"[^>]*>.*?<\/textarea>/i, `
-        <input id="customSearch" type="text" placeholder="Search Google"
-          style="width:100%;height:100%;background:transparent;border:none;outline:none;color:black;font-family:Roboto,Arial,sans-serif;font-size:16px;padding:0;margin:0;">
-      `);
-      return `<div style="width:100%;height:100%;position:relative;">${inner}</div>`;
-    });
-    html = html.replace(/<\/body>/i, `
-      <script>
-        window.addEventListener('DOMContentLoaded', function() {
-          const input=document.querySelector('#customSearch');
-          if(input){
-            input.addEventListener('keydown',function(e){
-              if(e.key==='Enter'){
-                e.preventDefault();
-                const q=input.value;
-                if(q) alert('Proxy may redirect multiple times while loading.');
-                window.location.href='/api/proxy?url='+encodeURIComponent('https://www.google.com/search?q='+q);
-              }
-            });
-          }
-        });
-      </script>
-    </body>`);
-  }
-
   html = html.replace(/<\/body>/i, `
     <script>
-      function proxifyLinksAndForms(hostDomain){
+      function proxifyAllLinksFormsAndWindows(hostDomain){
         document.querySelectorAll('a').forEach(a=>{
-          a.addEventListener('click',function(e){
+          a.addEventListener('click', e=>{
             const href=a.href;
             if(href && !href.startsWith('/api/proxy') && !href.startsWith('javascript:') && !href.startsWith('data:')){
               const urlObj=new URL(href,a.baseURI);
-              if(urlObj.hostname===hostDomain) return;
-              e.preventDefault();
-              window.location.href='/api/proxy?url='+encodeURIComponent(href);
+              if(urlObj.hostname!==hostDomain){
+                e.preventDefault();
+                window.location.href='/api/proxy?url='+encodeURIComponent(href);
+              }
             }
           });
         });
+
         document.querySelectorAll('form').forEach(f=>{
-          f.addEventListener('submit',function(e){
+          f.addEventListener('submit', e=>{
             e.preventDefault();
             let url=f.action||window.location.href;
             const urlObj=new URL(url,f.baseURI);
@@ -92,8 +66,35 @@ function rewriteHTML(html, baseUrl, hostDomain) {
             window.location.href='/api/proxy?url='+encodeURIComponent(url);
           });
         });
+
+        const overrideLocation = (obj, prop) => {
+          const original = obj[prop];
+          Object.defineProperty(obj, prop, {
+            set:function(v){
+              try{
+                const u=new URL(v);
+                if(u.hostname!==hostDomain){
+                  original='/api/proxy?url='+encodeURIComponent(v);
+                }
+              }catch{}
+              original=v;
+            },
+            get:function(){return original;},
+            configurable:true
+          });
+        };
+        overrideLocation(window,'location');
+        overrideLocation(window.top,'location');
+        const origOpen=window.open;
+        window.open=function(url,...rest){
+          try{
+            const u=new URL(url);
+            if(u.hostname!==hostDomain) url='/api/proxy?url='+encodeURIComponent(url);
+          }catch{}
+          return origOpen.call(window,url,...rest);
+        };
       }
-      proxifyLinksAndForms(window.location.hostname);
+      proxifyAllLinksFormsAndWindows(window.location.hostname);
     </script>
   </body>`);
 

@@ -1,27 +1,64 @@
-const CACHE_NAME = 'proxy-sw-cache-v1';
-const PROXY_PREFIX = '/api/proxy?url=';
-
-self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));
-self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-
-  if(e.request.method !== 'GET') return;
-
-  if(url.pathname.startsWith(PROXY_PREFIX) || url.origin === location.origin){
-    e.respondWith(fetch(e.request).catch(()=>new Response('Network error', {status:408})));
-    return;
-  }
-
-  const proxiedUrl = PROXY_PREFIX + encodeURIComponent(e.request.url);
-  e.respondWith(fetch(proxiedUrl).catch(()=>new Response('Proxy fetch failed', {status:408})));
+self.addEventListener('install', event=>{
+  self.skipWaiting();
 });
 
-self.addEventListener('message', e => {
-  if(e.data && e.data.type==='CLEAR_CACHE'){
-    caches.keys().then(keys=>keys.forEach(k=>caches.delete(k)));
-  }
+self.addEventListener('activate', event=>{
+  event.waitUntil(self.clients.claim());
 });
 
-self.addEventListener('push', e=>{});
+self.addEventListener('fetch', event=>{
+  const req = event.request;
+  const url = new URL(req.url);
+  const base = self.location.origin;
+
+  if(req.method==='POST' || req.method==='GET'){
+    event.respondWith((async ()=>{
+      try{
+        const cloned = req.clone();
+        const headers = new Headers(cloned.headers);
+        headers.set('X-Proxy-Sw','true');
+        const modifiedReq = new Request(cloned,{headers});
+        const resp = await fetch(modifiedReq);
+        if(resp.ok){
+          let contentType = resp.headers.get('content-type')||'';
+          if(contentType.includes('text/html') || contentType.includes('application/javascript') || contentType.includes('text/css')){
+            let text = await resp.text();
+            text = text.replace(/(window\.location(?:\.href)?\s*=\s*['"`])(.*?)['"`]/gi,(m,prefix,target)=>{
+              try{
+                let t=new URL(target,url).toString();
+                if(!t.startsWith(base+'/api/proxy.js?url=')) t=base+'/api/proxy.js?url='+encodeURIComponent(t);
+                return prefix+t+'"';
+              }catch{return m;}
+            });
+            text = text.replace(/window\.open\s*\(\s*['"`](.*?)['"`]/gi,(m,target)=>{
+              try{
+                let t=new URL(target,url).toString();
+                if(!t.startsWith(base+'/api/proxy.js?url=')) t=base+'/api/proxy.js?url='+encodeURIComponent(t);
+                return `window.open('${t}')`;
+              }catch{return m;}
+            });
+            text = text.replace(/<a\s+[^>]*href=["'](.*?)["']/gi,(m,target)=>{
+              try{
+                let t=new URL(target,url).toString();
+                if(!t.startsWith(base+'/api/proxy.js?url=')) t=base+'/api/proxy.js?url='+encodeURIComponent(t);
+                return m.replace(target,t);
+              }catch{return m;}
+            });
+            text = text.replace(/<form\s+[^>]*action=["'](.*?)["']/gi,(m,target)=>{
+              try{
+                let t=new URL(target,url).toString();
+                if(!t.startsWith(base+'/api/proxy.js?url=')) t=base+'/api/proxy.js?url='+encodeURIComponent(t);
+                return m.replace(target,t);
+              }catch{return m;}
+            });
+            return new Response(text,{headers:resp.headers,status:resp.status,statusText:resp.statusText});
+          }
+          return resp;
+        }
+        return resp;
+      }catch(e){
+        return new Response('ServiceWorker fetch error: '+e.message,{status:500});
+      }
+    })());
+  }
+});

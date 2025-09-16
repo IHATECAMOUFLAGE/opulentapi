@@ -6,10 +6,10 @@ import path from 'path';
 let injectJS = '';
 try {
   injectJS = fs.readFileSync(path.join(process.cwd(), 'lib/rewriter/inject.js'), 'utf8');
-} catch (e) {}
+} catch {}
 
 function rewriteHTML(html, baseUrl) {
-  html = html.replace(/(src|srcset|poster)=["']([^"']+)["']/gi, (m, attr, url) => {
+  html = html.replace(/(src|srcset|poster|action)=["']([^"']+)["']/gi, (m, attr, url) => {
     if (!url || url.startsWith('data:') || url.startsWith('/api/proxy') || url.startsWith('javascript:')) return m;
     try {
       const absolute = new URL(url, baseUrl).toString();
@@ -33,79 +33,65 @@ function rewriteHTML(html, baseUrl) {
     } catch { return m; }
   });
 
-  html = html.replace(/<\/body>/i, `
-<script>
-function proxifyAllLinksFormsAndWindows(hostDomain){
-  const proxifyElement = (el)=>{
-    if(el.dataset.proxified) return;
-    el.dataset.proxified='1';
-    if(el.tagName==='A'){
-      el.addEventListener('click', e=>{
-        const href = el.getAttribute('href');
-        if(href && !href.startsWith('/api/proxy') && !href.startsWith('javascript:') && !href.startsWith('data:')){
-          e.preventDefault();
-          try{
-            const urlObj=new URL(href, window.location.origin);
-            window.location.href='/api/proxy?url='+encodeURIComponent(urlObj.toString());
-          }catch{
-            window.location.href='/api/proxy?url='+encodeURIComponent(href);
+  html = html.replace(/<form[^>]*>([\s\S]*?)<\/form>/gi, (match, inner) => {
+    inner = inner.replace(/(action)=["']([^"']*)["']/gi, (m2, attr, link) => {
+      if (!link || link.startsWith('javascript:')) return m2;
+      try {
+        const absolute = new URL(link, baseUrl).toString();
+        return `${attr}="/api/proxy?url=${encodeURIComponent(absolute)}"`;
+      } catch { return m2; }
+    });
+    return match.replace(/<form[^>]*>/i, `<form>${inner}`);
+  });
+
+  html = html.replace(/<a[^>]*href=["']([^"']+)["']/gi, (m, link) => {
+    if (!link || link.startsWith('javascript:') || link.startsWith('/api/proxy')) return m;
+    try {
+      const absolute = new URL(link, baseUrl).toString();
+      return m.replace(link, `/api/proxy?url=${encodeURIComponent(absolute)}`);
+    } catch { return m; }
+  });
+
+  html = html.replace(/(window\.location|window\.top\.location|location)\.href\s*=\s*["']([^"']+)["']/gi, (m, obj, link) => {
+    if (!link || link.startsWith('javascript:') || link.startsWith('/api/proxy')) return m;
+    try {
+      const absolute = new URL(link, baseUrl).toString();
+      return `${obj}.href='/api/proxy?url=${encodeURIComponent(absolute)}'`;
+    } catch { return m; }
+  });
+
+  html = html.replace(/window\.open\s*\(\s*["']([^"']+)["']\s*(,.*?)?\)/gi, (m, link, extra) => {
+    if (!link || link.startsWith('javascript:') || link.startsWith('/api/proxy')) return m;
+    try {
+      const absolute = new URL(link, baseUrl).toString();
+      return `window.open('/api/proxy?url=${encodeURIComponent(absolute)}'${extra||''})`;
+    } catch { return m; }
+  });
+
+  const hostname = baseUrl.hostname.toLowerCase();
+  if (hostname.includes('google.com')) {
+    html = html.replace(/<textarea[^>]*id="APjFqb"[^>]*>.*?<\/textarea>/i, `
+      <input id="customSearch" type="text" placeholder="Search Google"
+        style="width:100%;height:100%;background:transparent;border:none;outline:none;color:black;font-family:Roboto,Arial,sans-serif;font-size:16px;padding:0;margin:0;">
+    `);
+    html = html.replace(/<\/body>/i, `
+      <script>
+        window.addEventListener('DOMContentLoaded',function(){
+          const input=document.querySelector('#customSearch');
+          if(input){
+            input.addEventListener('keydown',function(e){
+              if(e.key==='Enter'){
+                e.preventDefault();
+                const q=input.value;
+                if(q) alert('Proxy may redirect multiple times while loading.');
+                window.location.href='/api/proxy?url='+encodeURIComponent('https://www.google.com/search?q='+q);
+              }
+            });
           }
-        }
-      });
-    } else if(el.tagName==='FORM'){
-      el.addEventListener('submit', e=>{
-        e.preventDefault();
-        let action = el.getAttribute('action') || window.location.href;
-        try{
-          const urlObj=new URL(action, window.location.origin);
-          const params = new URLSearchParams(new FormData(el)).toString();
-          let finalUrl = urlObj.toString();
-          if(params) finalUrl += (finalUrl.includes('?')?'&':'?')+params;
-          window.location.href='/api/proxy?url='+encodeURIComponent(finalUrl);
-        }catch{
-          window.location.href='/api/proxy?url='+encodeURIComponent(action);
-        }
-      });
-    }
-  };
-  document.querySelectorAll('a,form').forEach(proxifyElement);
-  const observer = new MutationObserver(muts=>{
-    muts.forEach(m=>{
-      m.addedNodes.forEach(n=>{
-        if(n.nodeType===1){
-          if(n.tagName==='A'||n.tagName==='FORM') proxifyElement(n);
-          n.querySelectorAll('a,form').forEach(proxifyElement);
-        }
-      });
-    });
-  });
-  observer.observe(document.body,{childList:true,subtree:true});
-  const origOpen=window.open;
-  window.open=function(url,...rest){
-    try{
-      const u=new URL(url);
-      url='/api/proxy?url='+encodeURIComponent(u.toString());
-    }catch{}
-    return origOpen.call(window,url,...rest);
-  };
-  ['location','top.location'].forEach(prop=>{
-    const parts=prop.split('.');
-    const obj=parts.length===1?window:window[parts[0]];
-    const key=parts[parts.length-1];
-    let _val=obj[key];
-    Object.defineProperty(obj,key,{
-      set:function(v){
-        try{const u=new URL(v); v='/api/proxy?url='+encodeURIComponent(u.toString());}catch{}
-        _val=v;
-      },
-      get:function(){return _val;},
-      configurable:true
-    });
-  });
-}
-proxifyAllLinksFormsAndWindows(window.location.hostname);
-</script>
-</body>`);
+        });
+      </script>
+    </body>`);
+  }
 
   return html;
 }
@@ -122,7 +108,7 @@ export default async function handler(req, res) {
   if(!targetUrl) return res.status(400).send("Missing `url` or `raw` query parameter.");
   const isRaw = !!req.query.raw;
 
-  try { targetUrl = decodeURIComponent(targetUrl); } 
+  try { targetUrl = decodeURIComponent(targetUrl); }
   catch { return res.status(400).send("Invalid URL encoding."); }
 
   try {
@@ -147,11 +133,11 @@ export default async function handler(req, res) {
     delete headers['content-security-policy'];
     delete headers['content-security-policy-report-only'];
     delete headers['x-frame-options'];
-    for(const [key,value] of Object.entries(headers)) res.setHeader(key,value);
+    for(const [k,v] of Object.entries(headers)) res.setHeader(k,v);
 
     if(isImage||isBinary){
       const buffer = Buffer.from(response.data);
-      res.setHeader('Content-Length', buffer.length);
+      res.setHeader('Content-Length',buffer.length);
       return res.status(response.status).send(buffer);
     }
 
@@ -166,13 +152,11 @@ export default async function handler(req, res) {
 
     if(!isJs && contentType.includes('text/html')){
       const baseUrl = new URL(targetUrl);
-      data = rewriteHTML(data, baseUrl);
+      data = rewriteHTML(data,baseUrl);
       if(injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
     }
 
     return res.status(response.status).send(data);
 
-  } catch(e){
-    return res.status(500).send("Fetch error: "+e.message);
-  }
+  } catch(e){ return res.status(500).send("Fetch error: "+e.message); }
 }

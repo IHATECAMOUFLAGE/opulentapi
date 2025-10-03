@@ -66,7 +66,7 @@ function rewriteHTML(html, baseUrl) {
 }
 
 export default async function handler(req, res) {
-  if (req.method==='OPTIONS') {
+  if (req.method === 'OPTIONS') {
     res.setHeader("Access-Control-Allow-Origin","*");
     res.setHeader("Access-Control-Allow-Methods","GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers","Content-Type, User-Agent, Referer");
@@ -87,24 +87,35 @@ export default async function handler(req, res) {
     const isJs = /\.js$/i.test(targetUrl);
     const isJson = /\.json$/i.test(targetUrl);
 
+    const baseUrl = new URL(targetUrl);
+
+    const headers = {
+      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language': req.headers['accept-language'] || 'en-US,en;q=0.9',
+      'Referer': baseUrl.origin,
+      'Origin': baseUrl.origin,
+      'Connection': 'keep-alive',
+    };
+
     const response = await axios.get(targetUrl, {
       httpsAgent: agent,
       responseType: isImage || isBinary ? 'arraybuffer' : 'text',
-      timeout:20000,
-      headers:{'User-Agent':req.headers['user-agent']||'','Accept':'*/*'}
+      timeout: 20000,
+      headers
     });
 
-    const contentType = response.headers['content-type']||'application/octet-stream';
+    const contentType = response.headers['content-type'] || 'application/octet-stream';
     res.setHeader("Access-Control-Allow-Origin","*");
-    res.setHeader("Content-Type",contentType);
+    res.setHeader("Content-Type", contentType);
 
-    const headers = {...response.headers};
-    delete headers['content-security-policy'];
-    delete headers['content-security-policy-report-only'];
-    delete headers['x-frame-options'];
-    for(const [key,value] of Object.entries(headers)) res.setHeader(key,value);
+    const responseHeaders = {...response.headers};
+    delete responseHeaders['content-security-policy'];
+    delete responseHeaders['content-security-policy-report-only'];
+    delete responseHeaders['x-frame-options'];
+    for(const [key,value] of Object.entries(responseHeaders)) res.setHeader(key,value);
 
-    if(isImage || isBinary) {
+    if(isImage || isBinary){
       const buffer = Buffer.from(response.data);
       res.setHeader('Content-Length', buffer.length);
       return res.status(response.status).send(buffer);
@@ -120,7 +131,6 @@ export default async function handler(req, res) {
     }
 
     if(!isJs && contentType.includes('text/html')){
-      const baseUrl = new URL(targetUrl);
       data = rewriteHTML(data, baseUrl);
       if(injectJS) data = data.replace(/<\/head>/i, `<script>${injectJS}</script></head>`);
     }
